@@ -1,4 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useIsAdmin, useSession } from '../lib/auth';
+import { supabase } from '../lib/supabase';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
@@ -8,6 +10,10 @@ const navItems = [
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const session = useSession();
+  const isAdmin = useIsAdmin();
+  const authEmail = session?.user?.email || '';
+  const visibleNavItems = isAdmin ? navItems : navItems.filter((item) => item.to !== '/logs');
   const pageTitle = location.pathname.startsWith('/reviews/')
     ? 'Dettaglio recensione'
     : location.pathname === '/logs'
@@ -19,9 +25,8 @@ export default function Layout() {
       ? 'Monitora gli eventi degli agenti e verifica errori, rigenerazioni e pubblicazioni.'
       : 'Vista completa per priorita, performance, filtri e coda di lavorazione.';
 
-  function logout() {
-    localStorage.removeItem('cc-auth');
-    localStorage.removeItem('cc-auth-email');
+  async function logout() {
+    await supabase.auth.signOut();
     navigate('/login');
   }
 
@@ -39,7 +44,7 @@ export default function Layout() {
             </div>
 
             <nav className="mt-6 flex flex-col gap-2">
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -60,9 +65,7 @@ export default function Layout() {
 
           <div className="mt-6 rounded-[20px] border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900">
             <p className="font-semibold">Operatore collegato</p>
-            <p className="mt-1 text-brand-950">
-              {localStorage.getItem('cc-auth-email') || 'cc@azienda.it'}
-            </p>
+            <p className="mt-1 text-brand-950">{authEmail}</p>
             <button
               type="button"
               onClick={logout}

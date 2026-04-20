@@ -1,15 +1,28 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('cc@azienda.it');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    localStorage.setItem('cc-auth', 'true');
-    localStorage.setItem('cc-auth-email', email);
+    setError('');
+    setLoading(true);
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    setLoading(false);
+
+    if (error) {
+      setError('Credenziali non valide. Verifica email e password.');
+      return;
+    }
+
     navigate('/dashboard');
   }
 
@@ -50,7 +63,7 @@ export default function LoginPage() {
           </p>
           <h2 className="mt-3 text-3xl font-semibold text-ink">Login</h2>
           <p className="mt-3 text-sm text-neutral-600">
-            Autenticazione mock temporanea. Inserisci credenziali qualsiasi per entrare.
+            Accedi con le credenziali del tuo account operatore.
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
@@ -78,11 +91,18 @@ export default function LoginPage() {
               />
             </label>
 
+            {error && (
+              <p className="rounded-[12px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </p>
+            )}
+
             <button
               type="submit"
-              className="w-full rounded-[16px] bg-ink px-6 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white transition hover:bg-brand-700"
+              disabled={loading}
+              className="w-full rounded-[16px] bg-ink px-6 py-4 text-sm font-bold uppercase tracking-[0.18em] text-white transition hover:bg-brand-700 disabled:opacity-50"
             >
-              Entra nella dashboard
+              {loading ? 'Accesso in corso…' : 'Entra nella dashboard'}
             </button>
           </form>
         </section>

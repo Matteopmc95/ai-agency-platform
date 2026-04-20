@@ -13,10 +13,12 @@ import {
   regenerateReview,
 } from '../lib/api';
 import { formatDate } from '../lib/utils';
+import { useIsAdmin } from '../lib/auth';
 
 export default function ReviewDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const canViewLogs = useIsAdmin();
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -109,13 +111,15 @@ export default function ReviewDetailPage() {
         >
           Torna alla dashboard
         </Link>
-        <button
-          type="button"
-          onClick={() => navigate('/logs')}
-          className="w-fit rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-100"
-        >
-          Vai ai log agenti
-        </button>
+        {canViewLogs ? (
+          <button
+            type="button"
+            onClick={() => navigate('/logs')}
+            className="w-fit rounded-full bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition hover:bg-brand-100"
+          >
+            Vai ai log agenti
+          </button>
+        ) : null}
       </div>
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">

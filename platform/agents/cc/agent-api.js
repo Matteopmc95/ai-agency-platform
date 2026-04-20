@@ -21,6 +21,25 @@ async function log(agent, azione, dettaglio = null) {
   await supabase.from('agent_logs').insert({ agent, azione, dettaglio });
 }
 
+// --- AUTH MIDDLEWARE ---
+
+async function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ errore: 'Token di autenticazione mancante' });
+  }
+
+  const token = authHeader.slice(7);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    return res.status(401).json({ errore: 'Token non valido o scaduto' });
+  }
+
+  req.user = user;
+  next();
+}
+
 async function pubblicaRispostaTrustpilot(trustpilot_id, testo_risposta) {
   const url = `https://api.trustpilot.com/v1/private/reviews/${trustpilot_id}/reply`;
   await axios.post(
@@ -138,6 +157,9 @@ app.post('/webhook/trustpilot', async (req, res) => {
 
   res.json({ ok: true, risultati });
 });
+
+// Tutte le route successive richiedono autenticazione
+app.use(authMiddleware);
 
 // --- APPROVA E PUBBLICA REPLY ---
 // POST /reviews/:id/approve

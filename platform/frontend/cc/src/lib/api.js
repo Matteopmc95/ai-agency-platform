@@ -1,8 +1,44 @@
 import axios from 'axios';
+import { supabase } from './supabase';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 10000,
+});
+
+async function getAccessToken() {
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
+
+  if (error) {
+    throw error;
+  }
+
+  return session?.access_token || null;
+}
+
+api.interceptors.request.use(async (config) => {
+  const accessToken = await getAccessToken();
+
+  if (!config.headers) {
+    config.headers = {};
+  }
+
+  if (accessToken) {
+    if (typeof config.headers.set === 'function') {
+      config.headers.set('Authorization', `Bearer ${accessToken}`);
+    } else {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+  } else if (typeof config.headers.delete === 'function') {
+    config.headers.delete('Authorization');
+  } else {
+    delete config.headers.Authorization;
+  }
+
+  return config;
 });
 
 export function getErrorMessage(error, fallback = 'Si è verificato un errore inatteso.') {
