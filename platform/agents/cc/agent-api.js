@@ -1,11 +1,16 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
 
 const express = require('express');
+const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const { processaRecensione } = require('./agent-reviews');
 
 const app = express();
+app.use(cors({
+  origin: ['https://ai-agency-platform-git-main-matteo-pmcs-projects.vercel.app', 'http://localhost:5174', 'http://localhost:5173'],
+  credentials: true,
+}));
 app.use(express.json());
 
 // --- SUPABASE CLIENT ---
