@@ -41,6 +41,8 @@ export default function ReviewDetailPage() {
   const [regenerateLoading, setRegenerateLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const hasGeneratedResponse = Boolean(review?.risposta_generata);
+  const canPublish = responseText.trim().length >= 10;
 
   useEffect(() => {
     async function loadReview() {
@@ -224,7 +226,7 @@ export default function ReviewDetailPage() {
           </h2>
 
           <div className="mt-5">
-            {responseText ? (
+            {hasGeneratedResponse ? (
               <>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-sm text-neutral-500">
@@ -256,12 +258,24 @@ export default function ReviewDetailPage() {
                 />
               </>
             ) : (
-              <div className="rounded-[16px] border border-dashed border-neutral-200 bg-neutral-50 px-5 py-8">
-                <p className="text-base font-semibold text-ink">L'AI sta elaborando la risposta...</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-500">
-                  Aggiorna la pagina tra poco oppure usa il pulsante di rigenerazione quando disponibile.
-                </p>
-              </div>
+              <>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm text-neutral-500">
+                    La risposta AI non è ancora disponibile. Puoi scrivere manualmente il messaggio.
+                  </p>
+                  <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
+                    Modifica manuale
+                  </span>
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={responseText}
+                  onChange={(event) => setResponseText(event.target.value)}
+                  rows={14}
+                  className="w-full rounded-[16px] border border-brand-300 bg-white px-4 py-4 text-sm leading-7 text-neutral-700 outline-none transition focus:border-brand-400"
+                  placeholder="Scrivi qui la risposta da inviare al cliente..."
+                />
+              </>
             )}
           </div>
 
@@ -281,33 +295,43 @@ export default function ReviewDetailPage() {
             <button
               type="button"
               onClick={handleApprove}
-              disabled={approveLoading || regenerateLoading || isEditing || !responseText.trim() || review.stato === 'published'}
+              disabled={approveLoading || regenerateLoading || isEditing || !canPublish || review.stato === 'published'}
               className="rounded-[16px] bg-emerald-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {approveLoading ? 'Pubblicazione...' : 'Pubblica risposta'}
             </button>
 
-            {isEditing ? (
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={!draftResponseText.trim()}
-                className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Salva modifiche
-              </button>
+            {hasGeneratedResponse ? (
+              isEditing ? (
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={!draftResponseText.trim()}
+                  className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Salva modifiche
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  disabled={!responseText}
+                  className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Modifica risposta
+                </button>
+              )
             ) : (
               <button
                 type="button"
-                onClick={handleEdit}
-                disabled={!responseText}
-                className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => textareaRef.current?.focus()}
+                className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
               >
-                Modifica risposta
+                Scrivi risposta
               </button>
             )}
 
-            {isEditing ? (
+            {hasGeneratedResponse && isEditing ? (
               <button
                 type="button"
                 onClick={handleCancelEdit}
