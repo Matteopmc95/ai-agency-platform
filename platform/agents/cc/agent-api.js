@@ -163,13 +163,10 @@ app.post('/webhook/trustpilot', async (req, res) => {
   res.json({ ok: true, risultati });
 });
 
-// Tutte le route successive richiedono autenticazione
-app.use(authMiddleware);
-
 // --- APPROVA E PUBBLICA REPLY ---
 // POST /reviews/:id/approve
 // Approva la risposta generata e la pubblica su Trustpilot
-app.post('/reviews/:id/approve', async (req, res) => {
+app.post('/reviews/:id/approve', authMiddleware, async (req, res) => {
   const review_id = parseInt(req.params.id, 10);
 
   const { data: review } = await supabase
