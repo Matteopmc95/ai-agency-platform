@@ -35,6 +35,7 @@ export default function ReviewDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [responseText, setResponseText] = useState('');
+  const [draftResponseText, setDraftResponseText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
   const [regenerateLoading, setRegenerateLoading] = useState(false);
@@ -49,6 +50,7 @@ export default function ReviewDetailPage() {
         const data = await fetchReview(id);
         setReview(data);
         setResponseText(data.risposta_generata || '');
+        setDraftResponseText(data.risposta_generata || '');
         setIsEditing(false);
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Impossibile caricare i dati, riprova.'));
@@ -68,6 +70,7 @@ export default function ReviewDetailPage() {
       const result = await approveReview(id, responseText);
       setActionMessage('Risposta pubblicata correttamente.');
       setResponseText(result.risposta_pubblicata);
+      setDraftResponseText(result.risposta_pubblicata);
       setIsEditing(false);
       setReview((current) =>
         current
@@ -102,6 +105,7 @@ export default function ReviewDetailPage() {
           : current
       );
       setResponseText(result.analisi?.risposta_generata || '');
+      setDraftResponseText(result.analisi?.risposta_generata || '');
       setIsEditing(false);
       setActionMessage('La risposta è stata rigenerata con successo.');
     } catch (regenerateError) {
@@ -112,11 +116,27 @@ export default function ReviewDetailPage() {
   }
 
   function handleEdit() {
+    setDraftResponseText(responseText);
     setIsEditing(true);
+    setActionError('');
+    setActionMessage('');
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange?.(responseText.length, responseText.length);
+      textareaRef.current?.setSelectionRange?.(draftResponseText.length, draftResponseText.length);
     });
+  }
+
+  function handleSaveEdit() {
+    setResponseText(draftResponseText);
+    setIsEditing(false);
+    setActionError('');
+    setActionMessage('Modifiche salvate. La risposta aggiornata verrà usata in pubblicazione.');
+  }
+
+  function handleCancelEdit() {
+    setDraftResponseText(responseText);
+    setIsEditing(false);
+    setActionError('');
   }
 
   if (loading) {
@@ -224,8 +244,8 @@ export default function ReviewDetailPage() {
                 </div>
                 <textarea
                   ref={textareaRef}
-                  value={responseText}
-                  onChange={(event) => setResponseText(event.target.value)}
+                  value={isEditing ? draftResponseText : responseText}
+                  onChange={(event) => setDraftResponseText(event.target.value)}
                   readOnly={!isEditing}
                   rows={14}
                   className={`w-full rounded-[16px] border px-4 py-4 text-sm leading-7 text-neutral-700 outline-none transition ${
@@ -261,29 +281,50 @@ export default function ReviewDetailPage() {
             <button
               type="button"
               onClick={handleApprove}
-              disabled={approveLoading || regenerateLoading || !responseText.trim() || review.stato === 'published'}
+              disabled={approveLoading || regenerateLoading || isEditing || !responseText.trim() || review.stato === 'published'}
               className="rounded-[16px] bg-emerald-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {approveLoading ? 'Pubblicazione...' : 'Pubblica risposta'}
             </button>
 
-            <button
-              type="button"
-              onClick={handleEdit}
-              disabled={!responseText || isEditing}
-              className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
-            >
-              Modifica risposta
-            </button>
+            {isEditing ? (
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={!draftResponseText.trim()}
+                className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Salva modifiche
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleEdit}
+                disabled={!responseText}
+                className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Modifica risposta
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={handleRegenerate}
-              disabled={approveLoading || regenerateLoading}
-              className="rounded-[16px] bg-brand-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {regenerateLoading ? 'Rigenerazione...' : 'Rigenera con AI'}
-            </button>
+            {isEditing ? (
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="rounded-[16px] bg-neutral-100 px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+              >
+                Annulla
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                disabled={approveLoading || regenerateLoading}
+                className="rounded-[16px] bg-brand-600 px-5 py-4 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {regenerateLoading ? 'Rigenerazione...' : 'Rigenera con AI'}
+              </button>
+            )}
           </div>
         </section>
       </div>
