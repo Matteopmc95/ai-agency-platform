@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
+import { getUserName } from './utils';
 
 const ADMIN_EMAIL = 'matteo@parkingmycar.it';
 
@@ -34,4 +35,16 @@ export function useSession() {
 export function useIsAdmin() {
   const session = useSession();
   return session?.user?.email?.trim().toLowerCase() === ADMIN_EMAIL;
+}
+
+export function useUserProfile() {
+  const session = useSession();
+
+  return useMemo(() => {
+    const email = session?.user?.email || '';
+    return {
+      email,
+      name: getUserName(email),
+    };
+  }, [session]);
 }

@@ -42,23 +42,28 @@ api.interceptors.request.use(async (config) => {
 });
 
 export function getErrorMessage(error, fallback = 'Si è verificato un errore inatteso.') {
-  if (error?.response?.data?.errore) {
-    return error.response.data.errore;
+  if (error?.response?.status === 401) {
+    return 'La sessione è scaduta. Effettua di nuovo l’accesso.';
   }
 
-  if (error?.response?.data?.dettaglio) {
-    return error.response.data.dettaglio;
+  if (error?.code === 'ECONNABORTED' || !error?.response) {
+    return 'Impossibile caricare i dati, riprova.';
   }
 
-  if (error?.message) {
-    return error.message;
+  if (error?.response?.status >= 500) {
+    return 'Il servizio non è disponibile in questo momento. Riprova tra poco.';
   }
 
   return fallback;
 }
 
-export async function fetchStats() {
-  const { data } = await api.get('/stats');
+export async function fetchStats(params) {
+  const { data } = await api.get('/stats', { params });
+  return data;
+}
+
+export async function fetchTopicsBySegment(params) {
+  const { data } = await api.get('/stats/topics-by-segment', { params });
   return data;
 }
 

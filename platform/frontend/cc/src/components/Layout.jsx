@@ -1,29 +1,64 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useIsAdmin, useSession } from '../lib/auth';
+import { useUserProfile } from '../lib/auth';
 import { supabase } from '../lib/supabase';
+import { classNames } from '../lib/utils';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/logs', label: 'Log agenti' },
+  { to: '/reviews', label: 'Recensioni' },
+  { to: '/analytics', label: 'Analytics' },
 ];
+
+function NavigationContent({ onNavigate }) {
+  return (
+    <nav className="space-y-2">
+      {navItems.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            classNames(
+              'flex items-center rounded-2xl px-4 py-3 text-sm font-semibold transition',
+              isActive
+                ? 'bg-brand-600 text-white shadow-sm'
+                : 'text-neutral-600 hover:bg-brand-50 hover:text-brand-700'
+            )
+          }
+        >
+          {item.label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+function UserCard({ name, email, onLogout }) {
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+      <p className="text-sm font-semibold text-ink">{name}</p>
+      <p className="mt-1 break-all text-sm text-neutral-500">{email}</p>
+      <button
+        type="button"
+        onClick={onLogout}
+        className="mt-4 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold text-neutral-700 transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
+      >
+        Esci
+      </button>
+    </div>
+  );
+}
 
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const session = useSession();
-  const isAdmin = useIsAdmin();
-  const authEmail = session?.user?.email || '';
-  const visibleNavItems = isAdmin ? navItems : navItems.filter((item) => item.to !== '/logs');
-  const pageTitle = location.pathname.startsWith('/reviews/')
-    ? 'Dettaglio recensione'
-    : location.pathname === '/logs'
-      ? 'Log agenti'
-      : 'Cruscotto recensioni';
-  const pageDescription = location.pathname.startsWith('/reviews/')
-    ? 'Controlla i dettagli operativi, modifica la risposta AI e pubblica su Trustpilot.'
-    : location.pathname === '/logs'
-      ? 'Monitora gli eventi degli agenti e verifica errori, rigenerazioni e pubblicazioni.'
-      : 'Vista completa per priorita, performance, filtri e coda di lavorazione.';
+  const { name, email } = useUserProfile();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   async function logout() {
     await supabase.auth.signOut();
@@ -31,102 +66,74 @@ export default function Layout() {
   }
 
   return (
-    <div className="min-h-screen bg-sand p-3 sm:p-4">
-      <div className="subtle-grid flex min-h-[calc(100vh-1.5rem)] flex-col gap-4 rounded-[28px] border border-neutral-200 bg-[#FCFCFC] p-3 sm:p-4 lg:flex-row">
-        <aside className="page-surface flex w-full flex-col justify-between overflow-hidden p-6 lg:w-[280px] lg:shrink-0">
-          <div>
-            <div className="rounded-[24px] bg-ink p-6 text-white">
-              <p className="text-xs uppercase tracking-[0.28em] text-white/50">AI Agency Platform</p>
-              <h1 className="mt-3 text-[28px] font-semibold leading-8">CC Dashboard</h1>
-              <p className="mt-3 text-sm leading-6 text-white/70">
-                Monitoraggio recensioni, risposte AI e pubblicazione Trustpilot.
-              </p>
+    <div className="min-h-screen bg-[#f8f7f4]">
+      <div className="mx-auto flex min-h-screen max-w-[1600px] lg:p-4">
+        <div
+          className={classNames(
+            'fixed inset-0 z-40 bg-neutral-950/35 transition lg:hidden',
+            mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+          )}
+          onClick={() => setMobileOpen(false)}
+        />
+
+        <aside
+          className={classNames(
+            'fixed inset-y-0 left-0 z-50 flex w-[84%] max-w-[320px] flex-col border-r border-neutral-200 bg-white p-5 shadow-xl transition-transform duration-300 lg:static lg:w-[280px] lg:max-w-none lg:translate-x-0 lg:rounded-[24px] lg:border lg:shadow-sm',
+            mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          )}
+        >
+          <div className="flex items-center justify-between lg:block">
+            <div>
+              <p className="text-[24px] font-bold tracking-[-0.03em] text-brand-600">ParkingMyCar</p>
+              <p className="mt-1 text-sm text-neutral-500">Customer Care</p>
             </div>
 
-            <nav className="mt-6 flex flex-col gap-2">
-              {visibleNavItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      'rounded-[16px] border px-4 py-3 text-sm font-semibold transition',
-                      isActive
-                        ? 'border-brand-600 bg-brand-600 text-white'
-                        : 'border-transparent text-neutral-600 hover:border-brand-100 hover:bg-brand-50 hover:text-brand-700',
-                    ].join(' ')
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-
-          <div className="mt-6 rounded-[20px] border border-brand-100 bg-brand-50 p-4 text-sm text-brand-900">
-            <p className="font-semibold">Operatore collegato</p>
-            <p className="mt-1 text-brand-950">{authEmail}</p>
             <button
               type="button"
-              onClick={logout}
-              className="mt-4 rounded-full border border-brand-200 bg-white px-4 py-2 font-semibold text-brand-700 transition hover:border-brand-300 hover:bg-brand-100"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-full border border-neutral-200 p-2 text-neutral-500 lg:hidden"
+              aria-label="Chiudi menu"
             >
-              Esci
+              <span className="block h-4 w-4">×</span>
             </button>
           </div>
+
+          <div className="mt-8 flex-1">
+            <NavigationContent onNavigate={() => setMobileOpen(false)} />
+          </div>
+
+          <UserCard name={name} email={email} onLogout={logout} />
         </aside>
 
-        <main className="min-w-0 flex-1">
-          <div className="page-surface flex min-h-full flex-col overflow-hidden">
-            <header className="flex flex-col gap-6 border-b border-neutral-200 px-5 py-5 sm:px-6 lg:px-8 lg:py-6">
-              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-600">
-                    Area operativa
-                  </p>
-                  <h2 className="mt-3 text-[40px] font-semibold leading-[1.05] text-ink">
-                    {pageTitle}
-                  </h2>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-500">
-                    {pageDescription}
-                  </p>
-                </div>
+        <div className="flex min-h-screen flex-1 flex-col">
+          <header className="sticky top-0 z-30 border-b border-neutral-200 bg-[#f8f7f4]/95 px-4 py-4 backdrop-blur lg:hidden">
+            <div className="flex items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-neutral-200 bg-white shadow-sm"
+                aria-label="Apri menu"
+              >
+                <span className="flex flex-col gap-1.5">
+                  <span className="block h-0.5 w-5 rounded-full bg-neutral-700" />
+                  <span className="block h-0.5 w-5 rounded-full bg-neutral-700" />
+                  <span className="block h-0.5 w-5 rounded-full bg-neutral-700" />
+                </span>
+              </button>
 
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-                    Base API:{' '}
-                    <span className="font-semibold text-ink">
-                      {import.meta.env.VITE_API_BASE_URL || '/api'}
-                    </span>
-                  </div>
-
-                  <div className="rounded-[16px] border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">
-                    Modalita: <span className="font-semibold text-ink">Customer Care</span>
-                  </div>
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-semibold text-ink">{name}</p>
+                <p className="truncate text-sm text-neutral-500">{email}</p>
               </div>
+            </div>
+          </header>
 
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-neutral-400">Priorita</p>
-                  <p className="mt-2 text-sm font-semibold text-ink">Recensioni in coda e pubblicazioni</p>
-                </div>
-                <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-neutral-400">Obiettivo</p>
-                  <p className="mt-2 text-sm font-semibold text-ink">Ridurre i tempi di review e approvazione</p>
-                </div>
-                <div className="rounded-[18px] border border-brand-100 bg-brand-50 px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-brand-500">Focus</p>
-                  <p className="mt-2 text-sm font-semibold text-brand-900">Esperienza full-page, leggibile e rapida</p>
-                </div>
-              </div>
-            </header>
-
-            <div className="flex-1 px-5 py-5 sm:px-6 lg:px-8 lg:py-6">
+          <main className="flex-1 px-4 py-4 lg:px-6 lg:py-6">
+            <div className="mx-auto w-full max-w-[1200px]">
               <Outlet />
             </div>
-          </div>
-        </main>
+          </main>
+        </div>
       </div>
     </div>
   );

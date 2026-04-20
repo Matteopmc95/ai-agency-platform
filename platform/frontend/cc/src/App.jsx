@@ -1,9 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
+import AnalyticsPage from './pages/AnalyticsPage';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import LogsPage from './pages/LogsPage';
 import ReviewDetailPage from './pages/ReviewDetailPage';
+import ReviewsPage from './pages/ReviewsPage';
 import { useIsAdmin, useSession } from './lib/auth';
 
 function ProtectedRoute({ children }) {
@@ -45,7 +47,9 @@ export default function App() {
       >
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/reviews" element={<ReviewsPage />} />
         <Route path="/reviews/:id" element={<ReviewDetailPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route
           path="/logs"
           element={

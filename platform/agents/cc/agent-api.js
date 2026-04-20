@@ -26,6 +26,74 @@ async function log(agent, azione, dettaglio = null) {
   await supabase.from('agent_logs').insert({ agent, azione, dettaglio });
 }
 
+function getPeriodStart(period) {
+  const now = new Date();
+
+  if (period === 'month') {
+    return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()).toISOString();
+  }
+
+  if (period === '3months') {
+    return new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()).toISOString();
+  }
+
+  return null;
+}
+
+function normalizeTopicList(topic) {
+  if (Array.isArray(topic)) return topic;
+  if (typeof topic === 'string' && topic.trim()) return [topic.trim()];
+  return [];
+}
+
+function buildStatsAccumulator() {
+  return {
+    per_stato: {
+      pending: 0,
+      approved: 0,
+      published: 0,
+      skipped: 0,
+    },
+    per_stelle: {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+    },
+    per_segment: {
+      airport: 0,
+      port: 0,
+      station: 0,
+      city: 0,
+    },
+    top_topic: {},
+    flag_referral: 0,
+    flag_cross: 0,
+    cross_users: 0,
+    prima_prenotazione: 0,
+    total_reviews: 0,
+    reviews_today: 0,
+  };
+}
+
+function serializeStats(acc) {
+  return {
+    per_stato: Object.entries(acc.per_stato).map(([stato, n]) => ({ stato, n })),
+    per_stelle: [1, 2, 3, 4, 5].map((stelle) => ({ stelle, n: acc.per_stelle[String(stelle)] || 0 })),
+    per_segment: Object.entries(acc.per_segment).map(([segmento, count]) => ({ segmento, count })),
+    flag_referral: acc.flag_referral,
+    flag_cross: acc.flag_cross,
+    cross_users: acc.cross_users,
+    prima_prenotazione: acc.prima_prenotazione,
+    total_reviews: acc.total_reviews,
+    reviews_today: acc.reviews_today,
+    top_topic: Object.entries(acc.top_topic)
+      .sort((a, b) => b[1] - a[1])
+      .map(([topic, count]) => ({ topic, count })),
+  };
+}
+
 // --- AUTH MIDDLEWARE ---
 
 async function authMiddleware(req, res, next) {
@@ -389,34 +457,129 @@ app.get('/logs', async (req, res) => {
 // --- STATS ---
 // GET /stats
 app.get('/stats', async (req, res) => {
-  const stati = ['pending', 'approved', 'published', 'skipped'];
+  const { period = 'month' } = req.query;
+  const periodStart = getPeriodStart(period);
 
-  const [perStatoResults, perStelleResults, flagRefResult, flagCrossResult, topicResult] = await Promise.all([
-    Promise.all(stati.map(async (s) => {
-      const { count } = await supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('stato', s);
-      return { stato: s, n: count || 0 };
-    })),
-    Promise.all([1, 2, 3, 4, 5].map(async (s) => {
-      const { count } = await supabase.from('reviews').select('*', { count: 'exact', head: true }).eq('stelle', s);
-      return { stelle: s, n: count || 0 };
-    })),
-    supabase.from('review_analysis').select('*', { count: 'exact', head: true }).eq('flag_referral', true),
-    supabase.from('review_analysis').select('*', { count: 'exact', head: true }).eq('flag_cross', true),
-    supabase.from('review_analysis').select('topic'),
-  ]);
+  let query = supabase
+    .from('reviews')
+    .select(`
+      id, data, stelle, stato,
+      review_analysis (
+        topic, segmento, prima_prenotazione, cross, flag_referral, flag_cross
+      )
+    `);
 
-  const top_topic = (topicResult.data || [])
-    .flatMap(r => Array.isArray(r.topic) ? r.topic : [])
-    .reduce((acc, t) => { acc[t] = (acc[t] || 0) + 1; return acc; }, {});
+  if (periodStart) {
+    query = query.gte('data', periodStart);
+  }
+
+  const { data: reviews, error } = await query;
+
+  if (error) {
+    return res.status(500).json({ errore: error.message });
+  }
+
+  const acc = buildStatsAccumulator();
+  const today = new Date();
+
+  for (const review of reviews || []) {
+    const analysis = review.review_analysis?.[0] || {};
+    const topics = normalizeTopicList(analysis.topic).map((topic) => topic.trim().toLowerCase());
+    const segmento = analysis.segmento;
+    const currentDate = new Date(review.data);
+
+    acc.total_reviews += 1;
+    if (
+      currentDate.getFullYear() === today.getFullYear()
+      && currentDate.getMonth() === today.getMonth()
+      && currentDate.getDate() === today.getDate()
+    ) {
+      acc.reviews_today += 1;
+    }
+    if (acc.per_stato[review.stato] !== undefined) acc.per_stato[review.stato] += 1;
+    if (acc.per_stelle[String(review.stelle)] !== undefined) acc.per_stelle[String(review.stelle)] += 1;
+    if (segmento && acc.per_segment[segmento] !== undefined) acc.per_segment[segmento] += 1;
+    if (analysis.flag_referral) acc.flag_referral += 1;
+    if (analysis.flag_cross) acc.flag_cross += 1;
+    if (analysis.cross) acc.cross_users += 1;
+    if (analysis.prima_prenotazione) acc.prima_prenotazione += 1;
+
+    for (const topic of topics) {
+      acc.top_topic[topic] = (acc.top_topic[topic] || 0) + 1;
+    }
+  }
 
   res.json({
-    per_stato: perStatoResults,
-    per_stelle: perStelleResults,
-    flag_referral: flagRefResult.count || 0,
-    flag_cross: flagCrossResult.count || 0,
-    top_topic: Object.entries(top_topic)
+    period,
+    ...serializeStats(acc),
+  });
+});
+
+// --- TOPICS BY SEGMENT ---
+// GET /stats/topics-by-segment
+app.get('/stats/topics-by-segment', async (req, res) => {
+  const { period = 'month' } = req.query;
+  const periodStart = getPeriodStart(period);
+
+  let query = supabase
+    .from('reviews')
+    .select(`
+      id, data,
+      review_analysis (
+        topic, segmento
+      )
+    `);
+
+  if (periodStart) {
+    query = query.gte('data', periodStart);
+  }
+
+  const { data: reviews, error } = await query;
+
+  if (error) {
+    return res.status(500).json({ errore: error.message });
+  }
+
+  const grouped = {};
+
+  for (const review of reviews || []) {
+    const analysis = review.review_analysis?.[0] || {};
+    const segmento = analysis.segmento;
+    const topics = normalizeTopicList(analysis.topic).map((topic) => topic.trim().toLowerCase());
+
+    if (!segmento) continue;
+
+    if (!grouped[segmento]) {
+      grouped[segmento] = { totale: 0, topics: {} };
+    }
+
+    grouped[segmento].totale += 1;
+
+    for (const topic of topics) {
+      grouped[segmento].topics[topic] = (grouped[segmento].topics[topic] || 0) + 1;
+    }
+  }
+
+  const by_segment = Object.entries(grouped).map(([segmento, value]) => ({
+    segmento,
+    totale: value.totale,
+    topics: Object.entries(value.topics)
       .sort((a, b) => b[1] - a[1])
       .map(([topic, count]) => ({ topic, count })),
+  }));
+
+  const rows = by_segment.flatMap((segment) =>
+    segment.topics.map((topic) => ({
+      segmento: segment.segmento,
+      topic: topic.topic,
+      count: topic.count,
+    }))
+  );
+
+  res.json({
+    period,
+    rows,
+    by_segment,
   });
 });
 

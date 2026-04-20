@@ -10,7 +10,7 @@ export default function SectionCard({
   contentClassName,
 }) {
   return (
-    <section className={classNames('rounded-[24px] border border-neutral-200 bg-white shadow-sm', className)}>
+    <section className={classNames('rounded-[16px] border border-neutral-200 bg-white shadow-sm', className)}>
       {(eyebrow || title || description || actions) ? (
         <header className="flex flex-col gap-4 border-b border-neutral-200 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
           <div>
