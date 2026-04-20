@@ -35,6 +35,7 @@ export default function ReviewDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [responseText, setResponseText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
   const [regenerateLoading, setRegenerateLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
@@ -48,6 +49,7 @@ export default function ReviewDetailPage() {
         const data = await fetchReview(id);
         setReview(data);
         setResponseText(data.risposta_generata || '');
+        setIsEditing(false);
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Impossibile caricare i dati, riprova.'));
       } finally {
@@ -66,6 +68,7 @@ export default function ReviewDetailPage() {
       const result = await approveReview(id, responseText);
       setActionMessage('Risposta pubblicata correttamente.');
       setResponseText(result.risposta_pubblicata);
+      setIsEditing(false);
       setReview((current) =>
         current
           ? {
@@ -99,6 +102,7 @@ export default function ReviewDetailPage() {
           : current
       );
       setResponseText(result.analisi?.risposta_generata || '');
+      setIsEditing(false);
       setActionMessage('La risposta è stata rigenerata con successo.');
     } catch (regenerateError) {
       setActionError(getErrorMessage(regenerateError, 'Impossibile rigenerare la risposta, riprova.'));
@@ -108,7 +112,11 @@ export default function ReviewDetailPage() {
   }
 
   function handleEdit() {
-    textareaRef.current?.focus();
+    setIsEditing(true);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange?.(responseText.length, responseText.length);
+    });
   }
 
   if (loading) {
@@ -197,13 +205,36 @@ export default function ReviewDetailPage() {
 
           <div className="mt-5">
             {responseText ? (
-              <textarea
-                ref={textareaRef}
-                value={responseText}
-                onChange={(event) => setResponseText(event.target.value)}
-                rows={14}
-                className="w-full rounded-[16px] border border-neutral-200 bg-neutral-50 px-4 py-4 text-sm leading-7 text-neutral-700 outline-none transition focus:border-brand-400 focus:bg-white"
-              />
+              <>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm text-neutral-500">
+                    {isEditing
+                      ? 'Modalità modifica attiva'
+                      : 'Messaggio bloccato. Premi "Modifica risposta" per cambiarlo.'}
+                  </p>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      isEditing
+                        ? 'bg-brand-50 text-brand-700'
+                        : 'bg-neutral-100 text-neutral-600'
+                    }`}
+                  >
+                    {isEditing ? 'Modificabile' : 'Solo lettura'}
+                  </span>
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={responseText}
+                  onChange={(event) => setResponseText(event.target.value)}
+                  readOnly={!isEditing}
+                  rows={14}
+                  className={`w-full rounded-[16px] border px-4 py-4 text-sm leading-7 text-neutral-700 outline-none transition ${
+                    isEditing
+                      ? 'border-brand-300 bg-white focus:border-brand-400'
+                      : 'border-neutral-200 bg-neutral-50'
+                  }`}
+                />
+              </>
             ) : (
               <div className="rounded-[16px] border border-dashed border-neutral-200 bg-neutral-50 px-5 py-8">
                 <p className="text-base font-semibold text-ink">L'AI sta elaborando la risposta...</p>
@@ -239,6 +270,7 @@ export default function ReviewDetailPage() {
             <button
               type="button"
               onClick={handleEdit}
+              disabled={!responseText || isEditing}
               className="rounded-[16px] border border-neutral-200 bg-white px-5 py-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
             >
               Modifica risposta
