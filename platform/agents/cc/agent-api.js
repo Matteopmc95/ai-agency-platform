@@ -132,7 +132,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
     // Analisi asincrona (non blocca la risposta al webhook)
     setImmediate(async () => {
       try {
-        const analisi = await processaRecensione(trustpilot_id, testo);
+        const analisi = await processaRecensione(trustpilot_id, testo, autore);
 
         await supabase.from('review_analysis').insert({
           review_id,
@@ -330,7 +330,7 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
   if (!review) return res.status(404).json({ errore: 'Recensione non trovata' });
 
   try {
-    const analisi = await processaRecensione(review.trustpilot_id, review.testo);
+    const analisi = await processaRecensione(review.trustpilot_id, review.testo, review.autore);
 
     await supabase.from('review_analysis').upsert(
       {

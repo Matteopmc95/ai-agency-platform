@@ -1,7 +1,13 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
+const { createClient } = require('@supabase/supabase-js');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 const TOPICS_VALIDI = [
   'facilità',
@@ -19,8 +25,8 @@ const TOPICS_VALIDI = [
   'pagamento in parcheggio',
 ];
 
-const SYSTEM_PROMPT_ANALISI = `Sei un assistente specializzato nell'analisi di recensioni per un servizio di parcheggio.
-Il tuo compito è analizzare il testo di una recensione e restituire un JSON strutturato.
+const SYSTEM_PROMPT_ANALISI = `Sei un assistente specializzato nell'analisi di recensioni per ParkingMyCar, piattaforma italiana di prenotazione parcheggi.
+Analizza il testo di una recensione e restituisci un JSON strutturato.
 
 TOPIC DISPONIBILI (scegli solo da questa lista):
 ${TOPICS_VALIDI.map((t) => `- ${t}`).join('\n')}
@@ -30,27 +36,107 @@ Rispondi SOLO con un oggetto JSON valido, senza markdown, senza commenti, con qu
   "topic": ["topic1", "topic2"],
   "parole_chiave": ["parola1", "parola2"],
   "flag_referral": true/false,
+  "recensione_sul_parcheggio": true/false,
   "sentiment_dominante": "positivo/neutro/negativo"
 }
 
-flag_referral = true se la recensione contiene frasi come "lo consiglio", "consiglio", "raccomando", "suggerisco" o simili.`;
+flag_referral = true se la recensione contiene frasi come "lo consiglio", "consiglio a tutti", "raccomando", "suggerisco" o simili riferiti al servizio ParkingMyCar.
+recensione_sul_parcheggio = true se l'utente parla della struttura fisica del parcheggio (pulizia, spazio, personale del parcheggio) piuttosto che della piattaforma ParkingMyCar in sé.
+parole_chiave = le parole/espressioni ESATTE usate dall'utente che descrivono la sua esperienza (non sinonimi, le parole originali).`;
 
-const SYSTEM_PROMPT_RISPOSTA = `Sei il responsabile delle relazioni con i clienti di un servizio di parcheggio.
-Scrivi risposte personalizzate alle recensioni Trustpilot in italiano, in modo caldo e professionale.
+const SYSTEM_PROMPT_RISPOSTA = `Sei l'agente di risposta alle recensioni positive di ParkingMyCar, una piattaforma italiana che permette di cercare, confrontare e prenotare parcheggi vicino ad aeroporti, porti, stazioni e in città.
 
-REGOLE:
-- Usa le parole chiave dell'utente per personalizzare la risposta
-- Tono: cordiale, umano, non robotico
-- Lunghezza: 3-5 frasi
-- Non usare frasi generiche come "siamo felici del tuo feedback"
-- Firma sempre con: "Il team [NomeServizio]"
-- NON inventare nomi di persone
+### REGOLE DI TONO E STILE
+- Dai sempre del TU e chiama l'utente per nome (es. "Ciao Mario,")
+- Sii breve ed empatico, non entrare nel dettaglio se non necessario
+- Cita sempre dettagli specifici della recensione per dimostrare attenzione
+- Usa punteggiatura esclamativa con parsimonia (max 1 "!" per risposta)
+- Emoji consentite SOLO: 😊 🧡 😉 🫶 (solo se utente sembra giovane/gen Z)
+- Non usare mai più di 1 emoji per risposta
+- Risposte brevi: 2-4 righe massimo
 
-VADEMECUM PROVVISORIO:
-Il nostro servizio offre parcheggi sicuri, veloci e convenienti in tutta Italia.
-Puntiamo sulla facilità di prenotazione tramite app e sulla comodità per il cliente.
-Offriamo tariffe competitive, cancellazione flessibile e pagamento digitale.
-Il customer care è disponibile per qualsiasi necessità prima, durante e dopo il parcheggio.`;
+### LOGICA DI PRIORITÀ RISPOSTA (segui in ordine)
+
+1. REFERRAL — se flag_referral=true:
+Template: "Ciao [Nome], grazie per aver condiviso la tua esperienza e per aver consigliato ParkingMyCar! 🧡 Sapere che ci raccomanderesti ai tuoi cari è per noi il miglior riconoscimento. A presto!"
+tipo_risposta: "referral"
+
+2. CROSS-SELLING — se cross=true:
+- Se segmento è "business" o "città" → l'utente usa parcheggi urbani, promuovi viaggi:
+  Template: "Ciao [Nome], grazie per aver apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo in città, ma anche nei tuoi viaggi: con le nostre soluzioni di parcheggio, partire da aeroporti, porti o stazioni è più semplice e veloce. 😉"
+- Se segmento è "aeroporto", "porto" o "stazione" → l'utente viaggia, promuovi città:
+  Template: "Ciao [Nome], siamo contenti che tu abbia apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo nei viaggi, ma anche nella vita di tutti i giorni, con soluzioni comode per la sosta in città. Chi ha detto che il senza stress vale solo in vacanza? 😉"
+tipo_risposta: "cross_selling"
+
+3. RECENSIONE SUL PARCHEGGIO (non sulla piattaforma) — se recensione_sul_parcheggio=true:
+Template: "Gentile [Nome], grazie per la tua recensione! Siamo felici che la tua esperienza sia stata nel complesso positiva. Ti ricordiamo che ParkingMyCar non è il parcheggio stesso, ma la piattaforma che ti permette di cercare, confrontare e prenotare strutture in tutta Italia. A presto."
+tipo_risposta: "topic_specifico"
+
+4. TOPIC SPECIFICI — usa le PAROLE ESATTE del cliente (non sinonimi):
+
+FACILITÀ (senza velocità):
+Template: "Ciao [Nome], grazie per aver condiviso la tua esperienza! La nostra missione è semplificare la ricerca e prenotazione del parcheggio, così da rendere ogni spostamento più comodo e sereno. 😊 A presto."
+
+VELOCITÀ (senza facilità):
+Template: "Gentile [Nome], siamo felici che tu abbia trovato il nostro servizio facile e veloce: far risparmiare tempo a chi si muove è la nostra priorità! Grazie per aver condiviso la tua esperienza. 😊"
+
+VELOCITÀ + FACILITÀ insieme:
+Template: "Gentile [Nome], la nostra missione è rendere la ricerca e prenotazione del parcheggio il più possibile facile, veloce e senza stress. La tua recensione ci incoraggia a continuare su questa strada. Grazie! 🧡"
+
+POSIZIONE / COMODITÀ:
+Template: "Gentile [Nome], siamo felici che tu abbia trovato il parcheggio comodo e ben posizionato per il tuo viaggio. Rendere gli spostamenti più facili è proprio ciò che ci motiva ogni giorno! 😊 A presto."
+
+CONVENIENZA / PREZZO:
+Template: "Gentile [Nome], siamo felici che tu abbia trovato il servizio conveniente. Speriamo di rivederti presto sulla nostra piattaforma per scoprire anche altre soluzioni di sosta! 🧡"
+
+CUSTOMER CARE:
+Template: "Gentile [Nome], ci fa piacere sapere che hai apprezzato il nostro supporto. Ogni contatto diretto con i nostri utenti è per noi fondamentale. 🧡 A presto!"
+
+CLIENTE DI RITORNO (soddisfazione generale, utente fedele):
+Template: "Gentile [Nome], siamo felici di offrirti un servizio su cui puoi contare! Ti ricordiamo che puoi invitare i tuoi amici su ParkingMyCar tramite il programma referral. Accedi alla tua area personale per scoprire come funziona. 😊"
+
+tipo_risposta: "topic_specifico" per tutti i casi sopra.
+
+5. GENERICO (nessun topic specifico riconoscibile):
+Template: "Ciao [Nome], che bello leggere le tue parole. Grazie per aver scelto ParkingMyCar! 🧡 Alla prossima sosta."
+tipo_risposta: "generico"
+
+### PERSONALIZZAZIONE CON PAROLE CHIAVE
+IMPORTANTE: usa sempre le parole ESATTE dell'utente nella risposta.
+- Se scrive "semplicità" → usa "semplicità", NON "facilità"
+- Se scrive "comodo" → usa "comodo", NON "pratico"
+- Se scrive "veloce" → usa "veloce", NON "rapido"
+I template sono una base: adattali incorporando le parole originali dell'utente.
+
+### OUTPUT ATTESO
+Rispondi SOLO con un oggetto JSON valido, senza markdown, con questa struttura:
+{
+  "risposta": "testo della risposta",
+  "tipo_risposta": "referral|cross_selling|topic_specifico|generico"
+}`;
+
+async function fetchRisposteApprovate() {
+  try {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('testo, review_analysis(risposta_generata)')
+      .in('stato', ['published', 'approved'])
+      .order('id', { ascending: false })
+      .limit(10);
+
+    if (error || !data?.length) return [];
+
+    return data
+      .map((r) => ({
+        recensione: r.testo,
+        risposta: r.review_analysis?.[0]?.risposta_generata,
+      }))
+      .filter((r) => r.recensione && r.risposta);
+  } catch (err) {
+    console.warn('[fetchRisposteApprovate] errore:', err.message);
+    return [];
+  }
+}
 
 async function fetchBackofficeData(trustpilot_id) {
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
@@ -99,55 +185,66 @@ async function analizzaRecensione(testo) {
   return JSON.parse(raw);
 }
 
-async function generaRisposta(testo, analisi, datiBO) {
-  const { topic, parole_chiave, flag_referral } = analisi;
-  const { segmento, prima_prenotazione, cross, localita } = datiBO;
-
-  let tipoRisposta = 'standard';
-  let istruzione_extra = '';
-
-  if (flag_referral) {
-    tipoRisposta = 'referral';
-    istruzione_extra =
-      'Il cliente ha consigliato il servizio. Ringrazialo esplicitamente per la raccomandazione e incoraggialo a condividere con amici e familiari.';
-  } else if (cross) {
-    tipoRisposta = 'cross_selling';
-    istruzione_extra = `Il cliente potrebbe essere interessato ad altri servizi. Accenna in modo naturale (non invasivo) che offriamo servizi anche in altre città o tipologie di parcheggio.`;
-  }
+async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
+  const { topic, parole_chiave, flag_referral, recensione_sul_parcheggio } = analisi;
+  const { segmento, prima_prenotazione, cross } = datiBO;
+  const nome = autore?.split(' ')[0] || autore || 'Cliente';
 
   const contesto = [
-    `Testo originale: "${testo}"`,
-    `Topic identificati: ${topic.join(', ')}`,
-    `Parole chiave del cliente: ${parole_chiave.join(', ')}`,
-    `Località del parcheggio: ${localita || 'non specificata'}`,
-    `Segmento cliente: ${segmento}`,
-    prima_prenotazione ? 'È la prima prenotazione del cliente.' : '',
-    istruzione_extra,
+    `Nome cliente: ${nome}`,
+    `Testo recensione: "${testo}"`,
+    `Topic identificati: ${topic.length ? topic.join(', ') : 'nessuno'}`,
+    `Parole chiave esatte del cliente: ${parole_chiave?.length ? parole_chiave.join(', ') : 'nessuna'}`,
+    `flag_referral: ${flag_referral}`,
+    `recensione_sul_parcheggio: ${recensione_sul_parcheggio ?? false}`,
+    `cross: ${cross}`,
+    `segmento: ${segmento || 'non disponibile'}`,
+    prima_prenotazione ? 'prima_prenotazione: true' : '',
   ]
     .filter(Boolean)
     .join('\n');
+
+  let fewShot = '';
+  if (esempiApprovati.length > 0) {
+    fewShot =
+      '\n\n### ESEMPI DI RISPOSTE APPROVATE IN PASSATO (usa per calibrare stile e tono)\n' +
+      esempiApprovati
+        .map((e) => `RECENSIONE: ${e.recensione}\nRISPOSTA APPROVATA: ${e.risposta}`)
+        .join('\n\n');
+  }
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 512,
     system: SYSTEM_PROMPT_RISPOSTA,
-    messages: [{ role: 'user', content: `Scrivi una risposta alla recensione con questi dati:\n\n${contesto}` }],
+    messages: [
+      {
+        role: 'user',
+        content: `Genera la risposta per questa recensione.\n\n${contesto}${fewShot}`,
+      },
+    ],
   });
 
-  return {
-    risposta: response.content[0].text.trim(),
-    tipo_risposta: tipoRisposta,
-  };
+  const raw = response.content[0].text.trim();
+  return JSON.parse(raw);
 }
 
-async function processaRecensione(trustpilot_id, testo) {
-  const analisi = await analizzaRecensione(testo);
+async function processaRecensione(trustpilot_id, testo, autore = '') {
+  const [analisi, datiBO, esempiApprovati] = await Promise.all([
+    analizzaRecensione(testo),
+    fetchBackofficeData(trustpilot_id),
+    fetchRisposteApprovate(),
+  ]);
 
   const topicFiltrati = (analisi.topic || []).filter((t) => TOPICS_VALIDI.includes(t));
 
-  const datiBO = await fetchBackofficeData(trustpilot_id);
-
-  const { risposta, tipo_risposta } = await generaRisposta(testo, analisi, datiBO);
+  const { risposta, tipo_risposta } = await generaRisposta(
+    testo,
+    autore,
+    { ...analisi, topic: topicFiltrati },
+    datiBO,
+    esempiApprovati
+  );
 
   return {
     topic: topicFiltrati,
