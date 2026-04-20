@@ -250,17 +250,23 @@ app.post('/reviews/:id/approve', async (req, res) => {
   if (!review) return res.status(404).json({ errore: 'Recensione non trovata' });
   if (review.stato === 'published') return res.status(409).json({ errore: 'Già pubblicata' });
 
-  const { data: analisi } = await supabase
-    .from('review_analysis')
-    .select('*')
-    .eq('review_id', review_id)
-    .maybeSingle();
+  const risposta_custom = req.body?.risposta_custom?.trim() || null;
 
-  if (!analisi?.risposta_generata) {
-    return res.status(422).json({ errore: 'Risposta non ancora generata' });
+  let testo_risposta = risposta_custom;
+
+  if (!testo_risposta) {
+    const { data: analisi } = await supabase
+      .from('review_analysis')
+      .select('risposta_generata')
+      .eq('review_id', review_id)
+      .maybeSingle();
+
+    testo_risposta = analisi?.risposta_generata?.trim() || null;
   }
 
-  const testo_risposta = req.body?.risposta_custom || analisi.risposta_generata;
+  if (!testo_risposta) {
+    return res.status(422).json({ errore: 'Nessuna risposta disponibile: fornisci una risposta_custom o attendi la generazione AI' });
+  }
 
   try {
     await pubblicaRispostaTrustpilot(review.trustpilot_id, testo_risposta);
