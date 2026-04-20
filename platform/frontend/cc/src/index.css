@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #171717;
+  background:
+    radial-gradient(circle at top left, rgba(255, 152, 40, 0.14), transparent 28%),
+    radial-gradient(circle at top right, rgba(255, 230, 200, 0.85), transparent 24%),
+    linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 131, 0, 0.24);
+  border-radius: 999px;
+}
+
+.glass-panel {
+  @apply rounded-3xl border border-neutral-200/80 bg-white shadow-soft;
+}
+
+.page-surface {
+  @apply rounded-[24px] border border-neutral-200 bg-white shadow-soft;
+}
+
+.subtle-grid {
+  background-image:
+    linear-gradient(rgba(23, 23, 23, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 23, 23, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}

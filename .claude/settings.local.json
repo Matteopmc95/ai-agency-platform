@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(xcode-select -p)",
+      "Bash(node *)",
+      "Bash(curl -s http://localhost:3001/stats)",
+      "Bash(kill %1)"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "ai-agency-platform",
+  "version": "1.0.0",
+  "description": "AI Agency Platform — CC Agent (Trustpilot Reviews)",
+  "main": "agents/cc/agent-api.js",
+  "scripts": {
+    "start": "node agents/cc/agent-api.js",
+    "dev": "nodemon agents/cc/agent-api.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@supabase/supabase-js": "^2.104.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.19.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
