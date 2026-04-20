@@ -120,7 +120,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
     // Salva recensione
     const { data: inserted, error: insertErr } = await supabase
       .from('reviews')
-      .insert({ trustpilot_id, testo, autore, data, stelle, stato: 'pending' })
+      .insert({ trustpilot_id, testo, autore, data, stelle, stato: 'pending', reference_id: metadata.referenceId ?? null })
       .select('id')
       .single();
 
@@ -225,7 +225,7 @@ app.get('/reviews', async (req, res) => {
   let query = supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, testo, autore, data, stelle, stato,
+      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -259,6 +259,7 @@ app.get('/reviews', async (req, res) => {
       return {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
+        reference_id: r.reference_id || null,
         testo: r.testo,
         autore: r.autore,
         data: r.data,
@@ -286,7 +287,7 @@ app.get('/reviews/:id', async (req, res) => {
   const { data: r, error } = await supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, testo, autore, data, stelle, stato,
+      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -302,6 +303,7 @@ app.get('/reviews/:id', async (req, res) => {
   res.json({
     id: r.id,
     trustpilot_id: r.trustpilot_id,
+    reference_id: r.reference_id || null,
     testo: r.testo,
     autore: r.autore,
     data: r.data,
@@ -334,7 +336,12 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
   if (!review) return res.status(404).json({ errore: 'Recensione non trovata' });
 
   try {
-    const analisi = await processaRecensione(review.trustpilot_id, review.testo, review.autore);
+    const analisi = await processaRecensione(
+      review.trustpilot_id,
+      review.testo,
+      review.autore,
+      { referenceId: review.reference_id ?? null }
+    );
 
     await supabase.from('review_analysis').upsert(
       {

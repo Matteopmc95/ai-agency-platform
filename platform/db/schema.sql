@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   dettaglio JSONB
 );
 
+ALTER TABLE reviews ADD COLUMN IF NOT EXISTS reference_id TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_reviews_stato ON reviews(stato);
 CREATE INDEX IF NOT EXISTS idx_reviews_stelle ON reviews(stelle);
 CREATE INDEX IF NOT EXISTS idx_analysis_review_id ON review_analysis(review_id);
