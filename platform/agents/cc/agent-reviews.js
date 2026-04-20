@@ -62,9 +62,9 @@ Template: "Ciao [Nome], grazie per aver condiviso la tua esperienza e per aver c
 tipo_risposta: "referral"
 
 2. CROSS-SELLING — se cross=true:
-- Se segmento è "business" o "città" → l'utente usa parcheggi urbani, promuovi viaggi:
+- Se segmento è "business" o "city" → l'utente usa parcheggi urbani, promuovi viaggi:
   Template: "Ciao [Nome], grazie per aver apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo in città, ma anche nei tuoi viaggi: con le nostre soluzioni di parcheggio, partire da aeroporti, porti o stazioni è più semplice e veloce. 😉"
-- Se segmento è "aeroporto", "porto" o "stazione" → l'utente viaggia, promuovi città:
+- Se segmento è "airport", "port" o "station" → l'utente viaggia, promuovi città:
   Template: "Ciao [Nome], siamo contenti che tu abbia apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo nei viaggi, ma anche nella vita di tutti i giorni, con soluzioni comode per la sosta in città. Chi ha detto che il senza stress vale solo in vacanza? 😉"
 tipo_risposta: "cross_selling"
 
@@ -115,6 +115,113 @@ Rispondi SOLO con un oggetto JSON valido, senza markdown, con questa struttura:
   "tipo_risposta": "referral|cross_selling|topic_specifico|generico"
 }`;
 
+// --- CSV PARSER ---
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCSV(csvText) {
+  const lines = csvText.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  const headers = parseCSVLine(lines[0]).map(h => h.trim());
+  return lines.slice(1).map((line) => {
+    const values = parseCSVLine(line);
+    return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
+  });
+}
+
+// --- BO API ---
+
+function toISODate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null } = {}) {
+  // La corrispondenza avviene via referenceId (solitamente l'email impostata nell'invito Trustpilot)
+  const isEmail = referenceId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(referenceId.trim());
+
+  if (!isEmail) {
+    console.warn(
+      `[BO API] Corrispondenza non trovata per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}: referenceId mancante o non è un'email`
+    );
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+  }
+
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 90);
+
+  const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
+
+  try {
+    const response = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Accept: 'text/csv',
+      },
+      params: {
+        start_date: toISODate(startDate),
+        end_date: toISODate(endDate),
+      },
+      timeout: 10000,
+    });
+
+    const rows = parseCSV(response.data);
+    const email = referenceId.trim().toLowerCase();
+    const userRows = rows.filter(r => r.user_email?.trim().toLowerCase() === email);
+
+    if (!userRows.length) {
+      console.warn(
+        `[BO API] Nessuna prenotazione trovata per email=${email} (trustpilot_id=${trustpilot_id})`
+      );
+      return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+    }
+
+    const lastRow = userRows[userRows.length - 1];
+    const segmentiUnici = [...new Set(userRows.map(r => r.parking_type).filter(Boolean))];
+
+    // prima_prenotazione = true se la data della prima prenotazione dell'utente ricade nel range 90gg
+    const primaPrenotazione =
+      !!lastRow.user_first_booking_date &&
+      lastRow.user_first_booking_date >= toISODate(startDate);
+
+    return {
+      segmento: lastRow.parking_type || null,
+      prima_prenotazione: primaPrenotazione,
+      cross: segmentiUnici.length > 1,
+      localita: lastRow.location_name || null,
+    };
+  } catch (err) {
+    console.error(`[BO API] Errore chiamata booking-details: ${err.message}`);
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+  }
+}
+
+// --- SUPABASE: RISPOSTE APPROVATE ---
+
 async function fetchRisposteApprovate() {
   try {
     const { data, error } = await supabase
@@ -138,40 +245,7 @@ async function fetchRisposteApprovate() {
   }
 }
 
-async function fetchBackofficeData(trustpilot_id) {
-  const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
-  const headers = { Authorization: `Basic ${auth}` };
-  const baseUrl = process.env.BO_API_BASE;
-
-  const [bookingRes, stayRes] = await Promise.allSettled([
-    axios.get(`${baseUrl}/reporting/marketing/booking-details`, {
-      headers,
-      params: { trustpilot_id },
-      timeout: 5000,
-    }),
-    axios.get(`${baseUrl}/reporting/marketing/stay-details`, {
-      headers,
-      params: { trustpilot_id },
-      timeout: 5000,
-    }),
-  ]);
-
-  const booking = bookingRes.status === 'fulfilled' ? bookingRes.value.data : null;
-  const stay = stayRes.status === 'fulfilled' ? stayRes.value.data : null;
-
-  if (!booking && !stay) {
-    console.warn(`[BO API] Nessun dato trovato per trustpilot_id=${trustpilot_id}`);
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
-  }
-
-  const dati = booking || stay;
-  return {
-    segmento: dati.segmento || null,
-    prima_prenotazione: dati.prima_prenotazione ?? false,
-    cross: dati.cross ?? false,
-    localita: dati.localita || null,
-  };
-}
+// --- ANALISI RECENSIONE ---
 
 async function analizzaRecensione(testo) {
   const response = await client.messages.create({
@@ -184,6 +258,8 @@ async function analizzaRecensione(testo) {
   const raw = response.content[0].text.trim();
   return JSON.parse(raw);
 }
+
+// --- GENERAZIONE RISPOSTA ---
 
 async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
   const { topic, parole_chiave, flag_referral, recensione_sul_parcheggio } = analisi;
@@ -229,10 +305,12 @@ async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
   return JSON.parse(raw);
 }
 
-async function processaRecensione(trustpilot_id, testo, autore = '') {
+// --- ENTRY POINT ---
+
+async function processaRecensione(trustpilot_id, testo, autore = '', metadata = {}) {
   const [analisi, datiBO, esempiApprovati] = await Promise.all([
     analizzaRecensione(testo),
-    fetchBackofficeData(trustpilot_id),
+    fetchBackofficeData(trustpilot_id, metadata),
     fetchRisposteApprovate(),
   ]);
 

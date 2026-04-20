@@ -88,6 +88,10 @@ app.post('/webhook/trustpilot', async (req, res) => {
     const testo = r.text || r.content;
     const autore = r.consumer?.name || r.consumer?.displayName || r.author || 'Anonimo';
     const data = r.createdAt || r.publishedAt || new Date().toISOString();
+    const metadata = {
+      referenceId: r.referenceIdentifier || r.referenceId || null,
+      consumer_id: r.consumer?.id || null,
+    };
 
     if (!trustpilot_id || !testo) {
       await log('agent-api', 'webhook_skip', { motivo: 'dati_mancanti', payload: r });
@@ -132,7 +136,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
     // Analisi asincrona (non blocca la risposta al webhook)
     setImmediate(async () => {
       try {
-        const analisi = await processaRecensione(trustpilot_id, testo, autore);
+        const analisi = await processaRecensione(trustpilot_id, testo, autore, metadata);
 
         await supabase.from('review_analysis').insert({
           review_id,
