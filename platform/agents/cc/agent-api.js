@@ -164,11 +164,9 @@ app.post('/webhook/trustpilot', async (req, res) => {
     const autore = r.consumer?.name || r.consumer?.displayName || r.author || 'Anonimo';
     const data = r.createdAt || r.publishedAt || new Date().toISOString();
     const metadata = {
-      referenceId: r.referenceIdentifier || r.referenceId || null,
+      referenceId: r.referenceId || null,
       consumer_id: r.consumer?.id || null,
     };
-
-    await log('agent-api', 'webhook_debug', { payload_raw: r });
 
     if (!trustpilot_id || !testo) {
       await log('agent-api', 'webhook_skip', { motivo: 'dati_mancanti', payload: r });
