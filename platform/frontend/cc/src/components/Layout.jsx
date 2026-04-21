@@ -59,7 +59,6 @@ export default function Layout() {
               src="/logo-pmc.png"
               alt="ParkingMyCar"
               className="h-8 object-contain"
-              style={{ filter: 'brightness(0)' }}
             />
           </div>
 

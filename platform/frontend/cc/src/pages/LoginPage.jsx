@@ -74,7 +74,6 @@ export default function LoginPage() {
           alt=""
           aria-hidden="true"
           className="absolute left-1/2 top-1/2 h-24 w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.05] sm:h-32"
-          style={{ filter: 'brightness(0)' }}
         />
       </div>
 
@@ -84,7 +83,6 @@ export default function LoginPage() {
             src="/logo-pmc.png"
             alt="ParkingMyCar"
             className="mx-auto h-10 object-contain"
-            style={{ filter: 'brightness(0)' }}
           />
           <p className="mt-2 text-sm font-medium text-neutral-400">Customer Care Dashboard</p>
         </div>
