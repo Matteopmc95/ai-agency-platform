@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { SegmentBadge, StatusBadge, TopicBadge } from './Badge';
+import { SegmentBadge, SourceBadge, StatusBadge, TopicBadge } from './Badge';
 import Stars from './Stars';
 import { formatDate, getVisibleTopics, truncateText } from '../lib/utils';
 
@@ -21,6 +21,7 @@ export default function ReviewRow({ review, compact = false }) {
 
           <div className="flex flex-wrap items-center gap-2">
             <Stars value={review.stelle} />
+            <SourceBadge source={review.source} />
             <StatusBadge status={review.stato} />
           </div>
         </div>

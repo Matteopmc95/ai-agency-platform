@@ -47,6 +47,12 @@ function normalizeTopicList(topic) {
   return [];
 }
 
+function applySourceFilter(query, source) {
+  if (!source) return query;
+  if (source === 'trustpilot') return query.or('source.eq.trustpilot,source.is.null');
+  return query.eq('source', source);
+}
+
 function buildStatsAccumulator() {
   return {
     per_stato: {
@@ -162,6 +168,8 @@ app.post('/webhook/trustpilot', async (req, res) => {
       consumer_id: r.consumer?.id || null,
     };
 
+    await log('agent-api', 'webhook_debug', { payload_raw: r });
+
     if (!trustpilot_id || !testo) {
       await log('agent-api', 'webhook_skip', { motivo: 'dati_mancanti', payload: r });
       risultati.push({ trustpilot_id, status: 'skipped', motivo: 'dati_mancanti' });
@@ -189,7 +197,16 @@ app.post('/webhook/trustpilot', async (req, res) => {
     // Salva recensione
     const { data: inserted, error: insertErr } = await supabase
       .from('reviews')
-      .insert({ trustpilot_id, testo, autore, data, stelle, stato: 'pending', reference_id: metadata.referenceId ?? null })
+      .insert({
+        trustpilot_id,
+        testo,
+        autore,
+        data,
+        stelle,
+        stato: 'pending',
+        source: 'trustpilot',
+        reference_id: metadata.referenceId ?? null,
+      })
       .select('id')
       .single();
 
@@ -313,7 +330,7 @@ app.get('/reviews', async (req, res) => {
     .range(off, off + lim - 1);
 
   if (stato) query = query.eq('stato', stato);
-  if (source) query = query.eq('source', source);
+  query = applySourceFilter(query, source);
 
   let countQuery = supabase
     .from('reviews')
@@ -322,7 +339,7 @@ app.get('/reviews', async (req, res) => {
     .lte('stelle', parseInt(stelle_max));
 
   if (stato) countQuery = countQuery.eq('stato', stato);
-  if (source) countQuery = countQuery.eq('source', source);
+  countQuery = applySourceFilter(countQuery, source);
 
   const [{ data: recensioni, error }, { count: totale }] = await Promise.all([query, countQuery]);
 
@@ -366,7 +383,7 @@ app.get('/reviews/:id', async (req, res) => {
   const { data: r, error } = await supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato,
+      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -388,6 +405,7 @@ app.get('/reviews/:id', async (req, res) => {
     data: r.data,
     stelle: r.stelle,
     stato: r.stato,
+    source: r.source || 'trustpilot',
     topic: a.topic || [],
     segmento: a.segmento || null,
     prima_prenotazione: Boolean(a.prima_prenotazione),
@@ -515,7 +533,7 @@ app.get('/logs', async (req, res) => {
 // --- STATS ---
 // GET /stats
 app.get('/stats', async (req, res) => {
-  const { period = 'month' } = req.query;
+  const { period = 'month', source } = req.query;
   const periodStart = getPeriodStart(period);
 
   let query = supabase
@@ -530,6 +548,7 @@ app.get('/stats', async (req, res) => {
   if (periodStart) {
     query = query.gte('data', periodStart);
   }
+  query = applySourceFilter(query, source);
 
   const { data: reviews, error } = await query;
 
@@ -576,7 +595,7 @@ app.get('/stats', async (req, res) => {
 // --- TOPICS BY SEGMENT ---
 // GET /stats/topics-by-segment
 app.get('/stats/topics-by-segment', async (req, res) => {
-  const { period = 'month' } = req.query;
+  const { period = 'month', source } = req.query;
   const periodStart = getPeriodStart(period);
 
   let query = supabase
@@ -591,6 +610,7 @@ app.get('/stats/topics-by-segment', async (req, res) => {
   if (periodStart) {
     query = query.gte('data', periodStart);
   }
+  query = applySourceFilter(query, source);
 
   const { data: reviews, error } = await query;
 

@@ -9,6 +9,7 @@ const defaultFilters = {
   status: '',
   minStars: '1',
   maxStars: '5',
+  source: '',
 };
 
 export default function ReviewsPage() {
@@ -29,6 +30,7 @@ export default function ReviewsPage() {
           stato: filters.status || undefined,
           stelle_min: filters.minStars,
           stelle_max: filters.maxStars,
+          source: filters.source || undefined,
           limit: PAGE_SIZE,
           offset: (page - 1) * PAGE_SIZE,
         });
@@ -93,7 +95,7 @@ export default function ReviewsPage() {
           </div>
 
           <div className={openFilters ? 'block' : 'hidden md:block'}>
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-5">
               <label className="space-y-2 text-sm font-medium text-neutral-700">
                 <span>Stato</span>
                 <select
@@ -136,6 +138,21 @@ export default function ReviewsPage() {
                       {value}
                     </option>
                   ))}
+                </select>
+              </label>
+
+              <label className="space-y-2 text-sm font-medium text-neutral-700">
+                <span>Fonte</span>
+                <select
+                  value={filters.source}
+                  onChange={(event) => handleFilterChange('source', event.target.value)}
+                  className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 outline-none transition focus:border-brand-400 focus:bg-white"
+                >
+                  <option value="">Tutte le fonti</option>
+                  <option value="trustpilot">Trustpilot</option>
+                  <option value="playstore">Android</option>
+                  <option value="apple">iOS</option>
+                  <option value="google">Google My Business</option>
                 </select>
               </label>
 

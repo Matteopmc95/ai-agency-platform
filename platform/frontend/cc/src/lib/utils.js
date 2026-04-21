@@ -29,6 +29,17 @@ export function classNames(...classes) {
   return classes.filter(Boolean).join(' ');
 }
 
+export const sourceLabels = {
+  trustpilot: 'Trustpilot',
+  playstore: 'Android',
+  apple: 'iOS',
+  google: 'GMB',
+};
+
+export function getSourceLabel(source) {
+  return sourceLabels[source] || 'Fonte sconosciuta';
+}
+
 export function statusLabel(status) {
   const labels = {
     pending: 'In attesa',
@@ -177,4 +188,14 @@ export function getReviewsTodayCount(reviews = []) {
       && current.getMonth() === today.getMonth()
       && current.getDate() === today.getDate();
   }).length;
+}
+
+export function getStarDistribution(stats) {
+  const map = new Map((stats?.per_stelle || []).map((item) => [Number(item.stelle), item.n || 0]));
+
+  return [5, 4, 3, 2, 1].map((stars) => ({
+    stars,
+    label: `${stars} stelle`,
+    value: map.get(stars) || 0,
+  }));
 }

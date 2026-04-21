@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FlagBadge, SegmentBadge, StatusBadge, TopicBadge } from '../components/Badge';
+import { FlagBadge, SegmentBadge, SourceBadge, StatusBadge, TopicBadge } from '../components/Badge';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
 import Stars from '../components/Stars';
@@ -173,6 +173,7 @@ export default function ReviewDetailPage() {
           <div className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-center gap-3">
               <Stars value={review.stelle} />
+              <SourceBadge source={review.source} />
               <StatusBadge status={review.stato} />
               <SegmentBadge segment={review.segmento} />
             </div>
@@ -195,10 +196,22 @@ export default function ReviewDetailPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <InfoCard label="Segmento" value={review.segmento || 'Non disponibile'} icon="S" />
             <InfoCard
+              label="Email utente"
+              value={review.reference_id || 'Non disponibile'}
+              icon="@"
+              subtle={!review.reference_id}
+            />
+            <InfoCard
               label="Località"
               value={review.localita || 'Non disponibile'}
               icon="L"
               subtle={!review.localita}
+            />
+            <InfoCard
+              label="ID prenotazione"
+              value="Non disponibile"
+              icon="#"
+              subtle
             />
             <div className="rounded-[16px] border border-neutral-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">

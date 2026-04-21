@@ -1,4 +1,4 @@
-import { classNames, getSegmentLabel, getTopicLabel, statusLabel } from '../lib/utils';
+import { classNames, getSegmentLabel, getSourceLabel, getTopicLabel, statusLabel } from '../lib/utils';
 
 const topicBadgeColors = [
   'bg-brand-50 text-brand-800 ring-brand-200',
@@ -20,6 +20,29 @@ const statusColors = {
   approved: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
   published: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   skipped: 'bg-red-50 text-red-700 ring-red-200',
+};
+
+const sourceBadgeMap = {
+  trustpilot: {
+    label: 'Trustpilot',
+    icon: '★',
+    className: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  },
+  playstore: {
+    label: 'Android',
+    icon: 'A',
+    className: 'bg-lime-100 text-lime-800 ring-lime-200',
+  },
+  apple: {
+    label: 'iOS',
+    icon: 'i',
+    className: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+  },
+  google: {
+    label: 'GMB',
+    icon: 'G',
+    className: 'bg-sky-50 text-sky-700 ring-sky-200',
+  },
 };
 
 export function StatusBadge({ status }) {
@@ -72,6 +95,26 @@ export function FlagBadge({ active, children }) {
       )}
     >
       {children}: {active ? 'Sì' : 'No'}
+    </span>
+  );
+}
+
+export function SourceBadge({ source }) {
+  const config = sourceBadgeMap[source] || {
+    label: getSourceLabel(source),
+    icon: '•',
+    className: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+  };
+
+  return (
+    <span
+      className={classNames(
+        'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset',
+        config.className
+      )}
+    >
+      <span aria-hidden="true">{config.icon}</span>
+      <span>{config.label}</span>
     </span>
   );
 }
