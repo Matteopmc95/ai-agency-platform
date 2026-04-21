@@ -5,6 +5,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const { processaRecensione } = require('./agent-reviews');
+const { avviaPollingPlayStore, rispondiPlayStore } = require('./sources/play-store');
 
 const app = express();
 app.use(cors({
@@ -291,6 +292,7 @@ app.get('/reviews', async (req, res) => {
     stelle_max = 5,
     limit = 50,
     offset = 0,
+    source,
   } = req.query;
 
   const lim = parseInt(limit);
@@ -299,7 +301,7 @@ app.get('/reviews', async (req, res) => {
   let query = supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato,
+      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -311,6 +313,7 @@ app.get('/reviews', async (req, res) => {
     .range(off, off + lim - 1);
 
   if (stato) query = query.eq('stato', stato);
+  if (source) query = query.eq('source', source);
 
   let countQuery = supabase
     .from('reviews')
@@ -319,6 +322,7 @@ app.get('/reviews', async (req, res) => {
     .lte('stelle', parseInt(stelle_max));
 
   if (stato) countQuery = countQuery.eq('stato', stato);
+  if (source) countQuery = countQuery.eq('source', source);
 
   const [{ data: recensioni, error }, { count: totale }] = await Promise.all([query, countQuery]);
 
@@ -339,6 +343,7 @@ app.get('/reviews', async (req, res) => {
         data: r.data,
         stelle: r.stelle,
         stato: r.stato,
+        source: r.source || 'trustpilot',
         topic: a.topic || [],
         segmento: a.segmento || null,
         prima_prenotazione: Boolean(a.prima_prenotazione),
@@ -393,6 +398,53 @@ app.get('/reviews/:id', async (req, res) => {
     flag_cross: Boolean(a.flag_cross),
     analisi_at: a.created_at || null,
   });
+});
+
+// --- REPLY PLAY STORE ---
+// POST /reviews/:id/reply-play
+// Pubblica risposta su Google Play Store
+app.post('/reviews/:id/reply-play', async (req, res) => {
+  const review_id = parseInt(req.params.id, 10);
+
+  const { data: review } = await supabase
+    .from('reviews')
+    .select('*')
+    .eq('id', review_id)
+    .maybeSingle();
+
+  if (!review) return res.status(404).json({ errore: 'Recensione non trovata' });
+  if (review.source !== 'playstore') return res.status(400).json({ errore: 'Recensione non proveniente da Play Store' });
+  if (review.stato === 'published') return res.status(409).json({ errore: 'Già pubblicata' });
+
+  const risposta_custom = req.body?.risposta_custom?.trim() || null;
+
+  let testo_risposta = risposta_custom;
+
+  if (!testo_risposta) {
+    const { data: analisi } = await supabase
+      .from('review_analysis')
+      .select('risposta_generata')
+      .eq('review_id', review_id)
+      .maybeSingle();
+
+    testo_risposta = analisi?.risposta_generata?.trim() || null;
+  }
+
+  if (!testo_risposta) {
+    return res.status(422).json({ errore: 'Nessuna risposta disponibile: fornisci risposta_custom o attendi la generazione AI' });
+  }
+
+  try {
+    await rispondiPlayStore(review.trustpilot_id, testo_risposta);
+
+    await supabase.from('reviews').update({ stato: 'published' }).eq('id', review_id);
+    await log('agent-api', 'reply_playstore_pubblicata', { review_id, play_review_id: review.trustpilot_id });
+
+    res.json({ ok: true, review_id, play_review_id: review.trustpilot_id, risposta_pubblicata: testo_risposta });
+  } catch (err) {
+    await log('agent-api', 'reply_playstore_errore', { review_id, errore: err.message });
+    res.status(502).json({ errore: 'Errore pubblicazione Play Store', dettaglio: err.message });
+  }
 });
 
 // --- RIGENERA RISPOSTA ---
@@ -592,6 +644,7 @@ app.get('/stats/topics-by-segment', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
+  avviaPollingPlayStore(supabase, log);
 });
 
 module.exports = app;
