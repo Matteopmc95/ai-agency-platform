@@ -55,7 +55,12 @@ export default function Layout() {
       <header className="sticky top-0 z-40 border-b border-neutral-200 bg-white shadow-sm">
         <div className="mx-auto flex h-14 max-w-[1600px] items-center justify-between px-4 lg:px-8">
           <div className="flex shrink-0 items-center">
-            <p className="text-[24px] font-bold tracking-[-0.03em] text-brand-500">ParkingMyCar</p>
+            <img
+              src="/logo-pmc.png"
+              alt="ParkingMyCar"
+              className="h-8 object-contain"
+              style={{ filter: 'brightness(0)' }}
+            />
           </div>
 
           <div className="hidden flex-1 justify-center lg:flex">

@@ -69,14 +69,23 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F8F9FA] px-6 py-10">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[min(24vw,220px)] font-bold tracking-[-0.08em] text-brand-500/5">
-          ParkingMyCar
-        </div>
+        <img
+          src="/logo-pmc.png"
+          alt=""
+          aria-hidden="true"
+          className="absolute left-1/2 top-1/2 h-24 w-auto -translate-x-1/2 -translate-y-1/2 object-contain opacity-[0.05] sm:h-32"
+          style={{ filter: 'brightness(0)' }}
+        />
       </div>
 
       <div className="login-card-enter relative z-10 w-full max-w-[400px] rounded-2xl border border-neutral-200 bg-white p-6 shadow-[0_18px_48px_rgba(15,23,42,0.08)] sm:p-8">
         <div className="text-center">
-          <p className="text-[34px] font-bold tracking-[-0.05em] text-brand-500">ParkingMyCar</p>
+          <img
+            src="/logo-pmc.png"
+            alt="ParkingMyCar"
+            className="mx-auto h-10 object-contain"
+            style={{ filter: 'brightness(0)' }}
+          />
           <p className="mt-2 text-sm font-medium text-neutral-400">Customer Care Dashboard</p>
         </div>
 
