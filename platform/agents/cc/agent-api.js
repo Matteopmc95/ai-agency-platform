@@ -209,6 +209,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
         stato: 'pending',
         source: 'trustpilot',
         reference_id: metadata.referenceId ?? null,
+        booking_date: null,
       })
       .select('id')
       .single();
@@ -226,6 +227,13 @@ app.post('/webhook/trustpilot', async (req, res) => {
     setImmediate(async () => {
       try {
         const analisi = await processaRecensione(trustpilot_id, testo, autore, metadata);
+
+        if (analisi.booking_date) {
+          await supabase
+            .from('reviews')
+            .update({ booking_date: analisi.booking_date })
+            .eq('id', review_id);
+        }
 
         await supabase.from('review_analysis').insert({
           review_id,
@@ -304,7 +312,7 @@ app.post('/reviews/:id/approve', async (req, res) => {
 
 // --- LISTA RECENSIONI ---
 // GET /reviews
-// Query params: stato (pending|approved|published|skipped), stelle_min, stelle_max, limit, offset
+// Query params: stato (pending|approved|published|skipped), stelle_min, stelle_max, limit, offset, source, sort (asc|desc)
 app.get('/reviews', async (req, res) => {
   const {
     stato,
@@ -313,15 +321,17 @@ app.get('/reviews', async (req, res) => {
     limit = 50,
     offset = 0,
     source,
+    sort = 'desc',
   } = req.query;
 
   const lim = parseInt(limit);
   const off = parseInt(offset);
+  const ascending = sort === 'asc';
 
   let query = supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato, source,
+      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -329,7 +339,7 @@ app.get('/reviews', async (req, res) => {
     `)
     .gte('stelle', parseInt(stelle_min))
     .lte('stelle', parseInt(stelle_max))
-    .order('data', { ascending: false })
+    .order('data', { ascending })
     .range(off, off + lim - 1);
 
   if (stato) query = query.eq('stato', stato);
@@ -358,6 +368,7 @@ app.get('/reviews', async (req, res) => {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
         reference_id: r.reference_id || null,
+        booking_date: r.booking_date || null,
         testo: r.testo,
         autore: r.autore,
         data: r.data,
@@ -386,7 +397,7 @@ app.get('/reviews/:id', async (req, res) => {
   const { data: r, error } = await supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, testo, autore, data, stelle, stato, source,
+      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -403,6 +414,7 @@ app.get('/reviews/:id', async (req, res) => {
     id: r.id,
     trustpilot_id: r.trustpilot_id,
     reference_id: r.reference_id || null,
+    booking_date: r.booking_date || null,
     testo: r.testo,
     autore: r.autore,
     data: r.data,
@@ -505,6 +517,11 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       },
       { onConflict: 'review_id' }
     );
+
+    await supabase
+      .from('reviews')
+      .update({ booking_date: analisi.booking_date || null })
+      .eq('id', review_id);
 
     await log('agent-api', 'risposta_rigenerata', { review_id });
     res.json({ ok: true, review_id, analisi });

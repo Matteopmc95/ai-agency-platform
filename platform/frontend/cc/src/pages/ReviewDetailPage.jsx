@@ -28,6 +28,32 @@ function InfoCard({ label, value, icon, subtle = false }) {
   );
 }
 
+function formatBookingDate(value) {
+  if (!value) return 'Non disponibile';
+
+  return new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'medium',
+  }).format(new Date(`${value}T00:00:00`));
+}
+
+function getBookingStatus(value) {
+  if (!value) return 'Non disponibile';
+
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const bookingDate = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(bookingDate.getTime())) return 'Non disponibile';
+  if (bookingDate > todayDate) return '🔵 Prenotazione futura';
+  if (bookingDate < todayDate) return '⚪ Prenotazione passata';
+  return '🟢 Prenotazione in corso';
+}
+
+function getBookingSummary(value) {
+  if (!value) return 'Non disponibile';
+  return `${formatBookingDate(value)} · ${getBookingStatus(value)}`;
+}
+
 export default function ReviewDetailPage() {
   const { id } = useParams();
   const textareaRef = useRef(null);
@@ -212,6 +238,12 @@ export default function ReviewDetailPage() {
               value="Non disponibile"
               icon="#"
               subtle
+            />
+            <InfoCard
+              label="Data prenotazione"
+              value={getBookingSummary(review.booking_date)}
+              icon="D"
+              subtle={!review.booking_date}
             />
             <div className="rounded-[16px] border border-neutral-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">
