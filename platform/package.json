@@ -5,7 +5,7 @@
   "main": "agents/cc/agent-api.js",
   "scripts": {
     "start": "node agents/cc/agent-api.js",
-    "dev": "nodemon agents/cc/agent-api.js"
+    "dev": "nodemon --legacy-watch agents/cc/agent-api.js"
   },
   "engines": {
     "node": ">=22.5.0"

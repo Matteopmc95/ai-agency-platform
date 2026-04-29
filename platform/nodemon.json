@@ -1,0 +1,5 @@
+{
+  "watch": ["agents/cc"],
+  "ext": "js,json",
+  "ignore": ["node_modules", "frontend", "db/*.db*", "logs"]
+}

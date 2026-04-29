@@ -1,12 +1,14 @@
-const path = require('path');
 const { google } = require('googleapis');
 
 const PACKAGE_NAME = 'it.parkingmycar.parkingmyapp';
 const POLL_INTERVAL_MS = 30 * 60 * 1000;
 
 function createAuth() {
+  const credentials = JSON.parse(
+    Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+  );
   return new google.auth.GoogleAuth({
-    keyFile: path.resolve(__dirname, '../../../../google-service-account.json'),
+    credentials,
     scopes: ['https://www.googleapis.com/auth/androidpublisher'],
   });
 }
