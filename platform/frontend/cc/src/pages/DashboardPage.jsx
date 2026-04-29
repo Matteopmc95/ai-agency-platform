@@ -25,6 +25,7 @@ function MetricCard({ label, value, helper, accent, children }) {
 export default function DashboardPage() {
   const { name } = useUserProfile();
   const [stats, setStats] = useState(null);
+  const [monthStats, setMonthStats] = useState(null);
   const [latestReviews, setLatestReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -35,8 +36,9 @@ export default function DashboardPage() {
         setLoading(true);
         setError('');
 
-        const [statsData, reviewsData] = await Promise.all([
-          fetchStats({ period: 'month' }),
+        const [statsData, monthStatsData, reviewsData] = await Promise.all([
+          fetchStats({ period: 'all' }),
+          fetchStats({ period: 'current_month' }),
           fetchReviews({
             stelle_min: 1,
             stelle_max: 5,
@@ -46,6 +48,7 @@ export default function DashboardPage() {
         ]);
 
         setStats(statsData);
+        setMonthStats(monthStatsData);
         setLatestReviews(reviewsData.recensioni || []);
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Impossibile caricare i dati, riprova.'));
@@ -83,25 +86,25 @@ export default function DashboardPage() {
         <MetricCard
           label="Recensioni oggi"
           value={stats?.reviews_today || 0}
-          helper="Nuove recensioni ricevute oggi"
+          helper="Nuove recensioni ricevute oggi da tutte le fonti"
           accent="linear-gradient(135deg, #FF6600, #FF8A3D)"
         />
         <MetricCard
           label="In attesa di risposta"
           value={getStatusCount(stats, 'pending')}
-          helper="Recensioni ancora da gestire"
+          helper="Recensioni ancora da gestire su tutte le fonti"
           accent="linear-gradient(135deg, #FFB020, #FFD166)"
         />
         <MetricCard
           label="Pubblicate questo mese"
-          value={getStatusCount(stats, 'published')}
-          helper="Risposte inviate nel mese corrente"
+          value={getStatusCount(monthStats, 'published')}
+          helper="Risposte inviate nel mese corrente da tutte le fonti"
           accent="linear-gradient(135deg, #22C55E, #86EFAC)"
         />
         <MetricCard
           label="Media stelle"
           value={averageStars ? averageStars.toFixed(1) : '0.0'}
-          helper="Valutazione media delle recensioni"
+          helper="Valutazione media complessiva su tutte le fonti"
           accent="linear-gradient(135deg, #FF6600, #FFB347)"
         >
           <Stars value={Math.round(averageStars)} />

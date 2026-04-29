@@ -148,11 +148,11 @@ export default function ReviewsPage() {
                   onChange={(event) => handleFilterChange('source', event.target.value)}
                   className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 outline-none transition focus:border-brand-400 focus:bg-white"
                 >
-                  <option value="">Tutte</option>
+                  <option value="">Tutte le fonti</option>
                   <option value="trustpilot">Trustpilot</option>
-                  <option value="playstore">Android</option>
-                  <option value="apple">iOS</option>
-                  <option value="google">Google</option>
+                  <option value="apple">iOS App Store</option>
+                  <option value="playstore">Google Play Store</option>
+                  <option value="google">Google My Business</option>
                 </select>
               </label>
 

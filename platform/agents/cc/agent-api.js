@@ -31,6 +31,10 @@ async function log(agent, azione, dettaglio = null) {
 function getPeriodStart(period) {
   const now = new Date();
 
+  if (period === 'current_month') {
+    return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  }
+
   if (period === 'month') {
     return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()).toISOString();
   }

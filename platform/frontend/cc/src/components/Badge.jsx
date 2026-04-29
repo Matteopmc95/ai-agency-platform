@@ -25,22 +25,22 @@ const statusColors = {
 const sourceBadgeMap = {
   trustpilot: {
     label: 'Trustpilot',
-    icon: '★',
+    icon: '⭐',
     className: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
   },
   playstore: {
     label: 'Android',
-    icon: 'A',
+    icon: '🤖',
     className: 'bg-green-50 text-green-700 ring-green-200',
   },
   apple: {
     label: 'iOS',
-    icon: 'i',
-    className: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
+    icon: null,
+    className: 'bg-neutral-700 text-white ring-neutral-700',
   },
   google: {
     label: 'Google',
-    icon: 'G',
+    icon: '📍',
     className: 'bg-sky-50 text-sky-700 ring-sky-200',
   },
 };
@@ -113,7 +113,7 @@ export function SourceBadge({ source }) {
         config.className
       )}
     >
-      <span aria-hidden="true">{config.icon}</span>
+      {config.icon ? <span aria-hidden="true">{config.icon}</span> : null}
       <span>{config.label}</span>
     </span>
   );
