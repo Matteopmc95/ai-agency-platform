@@ -33,7 +33,7 @@ export const sourceLabels = {
   trustpilot: 'Trustpilot',
   playstore: 'Android',
   apple: 'iOS',
-  google: 'GMB',
+  google: 'Google',
 };
 
 export function getSourceLabel(source) {

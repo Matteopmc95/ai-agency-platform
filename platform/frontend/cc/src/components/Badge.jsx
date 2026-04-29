@@ -31,7 +31,7 @@ const sourceBadgeMap = {
   playstore: {
     label: 'Android',
     icon: 'A',
-    className: 'bg-lime-100 text-lime-800 ring-lime-200',
+    className: 'bg-green-50 text-green-700 ring-green-200',
   },
   apple: {
     label: 'iOS',
@@ -39,7 +39,7 @@ const sourceBadgeMap = {
     className: 'bg-neutral-100 text-neutral-700 ring-neutral-200',
   },
   google: {
-    label: 'GMB',
+    label: 'Google',
     icon: 'G',
     className: 'bg-sky-50 text-sky-700 ring-sky-200',
   },
