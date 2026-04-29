@@ -3,3 +3,4 @@ node_modules/
 *.db
 .env
 google-service-account.json
+apple-key.p8

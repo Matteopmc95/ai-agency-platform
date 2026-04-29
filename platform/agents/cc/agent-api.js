@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const { processaRecensione } = require('./agent-reviews');
 const { avviaPollingPlayStore, rispondiPlayStore } = require('./sources/play-store');
+const { avviaPollingApple } = require('./sources/apple-store');
 
 const app = express();
 app.use(cors({
@@ -663,6 +664,7 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
   avviaPollingPlayStore(supabase, log);
+  avviaPollingApple(supabase, log);
 });
 
 module.exports = app;
