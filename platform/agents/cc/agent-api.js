@@ -209,7 +209,6 @@ app.post('/webhook/trustpilot', async (req, res) => {
         stato: 'pending',
         source: 'trustpilot',
         reference_id: metadata.referenceId ?? null,
-        booking_date: null,
       })
       .select('id')
       .single();
@@ -227,13 +226,6 @@ app.post('/webhook/trustpilot', async (req, res) => {
     setImmediate(async () => {
       try {
         const analisi = await processaRecensione(trustpilot_id, testo, autore, metadata);
-
-        if (analisi.booking_date) {
-          await supabase
-            .from('reviews')
-            .update({ booking_date: analisi.booking_date })
-            .eq('id', review_id);
-        }
 
         await supabase.from('review_analysis').insert({
           review_id,
@@ -331,7 +323,7 @@ app.get('/reviews', async (req, res) => {
   let query = supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
+      *,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -368,7 +360,6 @@ app.get('/reviews', async (req, res) => {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
         reference_id: r.reference_id || null,
-        booking_date: r.booking_date || null,
         testo: r.testo,
         autore: r.autore,
         data: r.data,
@@ -397,7 +388,7 @@ app.get('/reviews/:id', async (req, res) => {
   const { data: r, error } = await supabase
     .from('reviews')
     .select(`
-      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
+      *,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -414,7 +405,6 @@ app.get('/reviews/:id', async (req, res) => {
     id: r.id,
     trustpilot_id: r.trustpilot_id,
     reference_id: r.reference_id || null,
-    booking_date: r.booking_date || null,
     testo: r.testo,
     autore: r.autore,
     data: r.data,
@@ -517,11 +507,6 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       },
       { onConflict: 'review_id' }
     );
-
-    await supabase
-      .from('reviews')
-      .update({ booking_date: analisi.booking_date || null })
-      .eq('id', review_id);
 
     await log('agent-api', 'risposta_rigenerata', { review_id });
     res.json({ ok: true, review_id, analisi });
