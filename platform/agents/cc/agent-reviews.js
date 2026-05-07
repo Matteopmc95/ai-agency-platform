@@ -2,6 +2,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+console.log('[anthropic] key loaded:', process.env.ANTHROPIC_API_KEY ? 'YES (' + process.env.ANTHROPIC_API_KEY.substring(0, 10) + '...)' : 'NO');
+
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const supabase = createClient(
