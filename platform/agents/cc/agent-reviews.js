@@ -188,28 +188,10 @@ function normalizeDateOnly(value) {
   return parsed.toISOString().slice(0, 10);
 }
 
-function getBookingDateFromRow(row = {}) {
-  return normalizeDateOnly(
-    row.booking_date
-      || row.bookingDate
-      || row.booking_start_date
-      || row.bookingStartDate
-      || row.parking_start_date
-      || row.parkingStartDate
-      || row.check_in_date
-      || row.checkInDate
-      || row.arrival_date
-      || row.arrivalDate
-  );
-}
-
 async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null } = {}) {
-  // La corrispondenza avviene via referenceId (solitamente l'email impostata nell'invito Trustpilot)
-  const isEmail = referenceId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(referenceId.trim());
-
-  if (!isEmail) {
+  if (!referenceId) {
     console.warn(
-      `[BO API] Corrispondenza non trovata per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}: referenceId mancante o non è un'email`
+      `[BO API] referenceId mancante per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}`
     );
     return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
@@ -234,30 +216,35 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
     });
 
     const rows = parseCSV(response.data);
-    const email = referenceId.trim().toLowerCase();
-    const userRows = rows.filter(r => r.user_email?.trim().toLowerCase() === email);
+    const bookingId = String(referenceId).trim();
+    const bookingRow = rows.find(r => String(r.booking_id ?? '').trim() === bookingId);
 
-    if (!userRows.length) {
-      console.warn(
-        `[BO API] Nessuna prenotazione trovata per email=${email} (trustpilot_id=${trustpilot_id})`
-      );
+    console.log(`[bo] cerco booking_id=${bookingId}, trovato=${!!bookingRow}, parking_type=${bookingRow?.parking_type ?? 'n/a'}`);
+
+    if (!bookingRow) {
       return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
     }
 
-    const lastRow = userRows[userRows.length - 1];
+    // Cerca altre prenotazioni dello stesso utente per calcolare cross (segmenti diversi)
+    const userEmail = bookingRow.user_email?.trim().toLowerCase();
+    const userRows = userEmail
+      ? rows.filter(r => r.user_email?.trim().toLowerCase() === userEmail)
+      : [bookingRow];
+
     const segmentiUnici = [...new Set(userRows.map(r => r.parking_type).filter(Boolean))];
 
-    // prima_prenotazione = true se la data della prima prenotazione dell'utente ricade nel range 90gg
-    const primaPrenotazione =
-      !!lastRow.user_first_booking_date &&
-      lastRow.user_first_booking_date >= toISODate(startDate);
+    const bookingDate = normalizeDateOnly(bookingRow.booking_date);
+    const firstBookingDate = normalizeDateOnly(bookingRow.user_first_booking_date);
+
+    // prima_prenotazione = true se la prima prenotazione dell'utente coincide con quella corrente
+    const primaPrenotazione = !!(bookingDate && firstBookingDate && firstBookingDate === bookingDate);
 
     return {
-      segmento: lastRow.parking_type || null,
+      segmento: bookingRow.parking_type || null,
       prima_prenotazione: primaPrenotazione,
       cross: segmentiUnici.length > 1,
-      localita: lastRow.location_name || null,
-      booking_date: getBookingDateFromRow(lastRow),
+      localita: bookingRow.location_name || null,
+      booking_date: bookingDate,
     };
   } catch (err) {
     console.error(`[BO API] Errore chiamata booking-details: ${err.message}`);
