@@ -117,6 +117,17 @@ Rispondi SOLO con un oggetto JSON valido, senza markdown, con questa struttura:
   "tipo_risposta": "referral|cross_selling|topic_specifico|generico"
 }`;
 
+// --- JSON PARSER ---
+
+function parseJSONResponse(raw) {
+  const cleaned = raw
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  return JSON.parse(cleaned);
+}
+
 // --- CSV PARSER ---
 
 function parseCSVLine(line) {
@@ -290,7 +301,7 @@ async function analizzaRecensione(testo) {
   });
 
   const raw = response.content[0].text.trim();
-  return JSON.parse(raw);
+  return parseJSONResponse(raw);
 }
 
 // --- GENERAZIONE RISPOSTA ---
@@ -336,7 +347,7 @@ async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
   });
 
   const raw = response.content[0].text.trim();
-  return JSON.parse(raw);
+  return parseJSONResponse(raw);
 }
 
 // --- ENTRY POINT ---
