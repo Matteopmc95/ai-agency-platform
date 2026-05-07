@@ -58,53 +58,6 @@ function applySourceFilter(query, source) {
   return query.eq('source', source);
 }
 
-function buildStatsAccumulator() {
-  return {
-    per_stato: {
-      pending: 0,
-      approved: 0,
-      published: 0,
-      skipped: 0,
-    },
-    per_stelle: {
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
-      5: 0,
-    },
-    per_segment: {
-      airport: 0,
-      port: 0,
-      station: 0,
-      city: 0,
-    },
-    top_topic: {},
-    flag_referral: 0,
-    flag_cross: 0,
-    cross_users: 0,
-    prima_prenotazione: 0,
-    total_reviews: 0,
-    reviews_today: 0,
-  };
-}
-
-function serializeStats(acc) {
-  return {
-    per_stato: Object.entries(acc.per_stato).map(([stato, n]) => ({ stato, n })),
-    per_stelle: [1, 2, 3, 4, 5].map((stelle) => ({ stelle, n: acc.per_stelle[String(stelle)] || 0 })),
-    per_segment: Object.entries(acc.per_segment).map(([segmento, count]) => ({ segmento, count })),
-    flag_referral: acc.flag_referral,
-    flag_cross: acc.flag_cross,
-    cross_users: acc.cross_users,
-    prima_prenotazione: acc.prima_prenotazione,
-    total_reviews: acc.total_reviews,
-    reviews_today: acc.reviews_today,
-    top_topic: Object.entries(acc.top_topic)
-      .sort((a, b) => b[1] - a[1])
-      .map(([topic, count]) => ({ topic, count })),
-  };
-}
 
 // --- AUTH MIDDLEWARE ---
 
@@ -209,6 +162,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
         stato: 'pending',
         source: 'trustpilot',
         reference_id: metadata.referenceId ?? null,
+        booking_date: null,
       })
       .select('id')
       .single();
@@ -226,6 +180,13 @@ app.post('/webhook/trustpilot', async (req, res) => {
     setImmediate(async () => {
       try {
         const analisi = await processaRecensione(trustpilot_id, testo, autore, metadata);
+
+        if (analisi.booking_date) {
+          await supabase
+            .from('reviews')
+            .update({ booking_date: analisi.booking_date })
+            .eq('id', review_id);
+        }
 
         await supabase.from('review_analysis').insert({
           review_id,
@@ -323,7 +284,7 @@ app.get('/reviews', async (req, res) => {
   let query = supabase
     .from('reviews')
     .select(`
-      *,
+      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -360,6 +321,7 @@ app.get('/reviews', async (req, res) => {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
         reference_id: r.reference_id || null,
+        booking_date: r.booking_date || null,
         testo: r.testo,
         autore: r.autore,
         data: r.data,
@@ -388,7 +350,7 @@ app.get('/reviews/:id', async (req, res) => {
   const { data: r, error } = await supabase
     .from('reviews')
     .select(`
-      *,
+      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, localita,
         risposta_generata, flag_referral, flag_cross, created_at
@@ -405,6 +367,7 @@ app.get('/reviews/:id', async (req, res) => {
     id: r.id,
     trustpilot_id: r.trustpilot_id,
     reference_id: r.reference_id || null,
+    booking_date: r.booking_date || null,
     testo: r.testo,
     autore: r.autore,
     data: r.data,
@@ -508,6 +471,11 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       { onConflict: 'review_id' }
     );
 
+    await supabase
+      .from('reviews')
+      .update({ booking_date: analisi.booking_date || null })
+      .eq('id', review_id);
+
     await log('agent-api', 'risposta_rigenerata', { review_id });
     res.json({ ok: true, review_id, analisi });
   } catch (err) {
@@ -541,59 +509,111 @@ app.get('/stats', async (req, res) => {
   const { period = 'month', source } = req.query;
   const periodStart = getPeriodStart(period);
 
-  let query = supabase
+  const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
+
+  function buildCountQuery(filters = {}) {
+    let q = supabase.from('reviews').select('*', { count: 'exact', head: true });
+    if (periodStart) q = q.gte('data', periodStart);
+    q = applySourceFilter(q, source);
+    for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
+    return q;
+  }
+
+  let chartQuery = supabase
     .from('reviews')
     .select(`
-      id, data, stelle, stato,
       review_analysis (
         topic, segmento, prima_prenotazione, cross, flag_referral, flag_cross
       )
-    `);
+    `)
+    .range(0, 9999);
+  if (periodStart) chartQuery = chartQuery.gte('data', periodStart);
+  chartQuery = applySourceFilter(chartQuery, source);
 
-  if (periodStart) {
-    query = query.gte('data', periodStart);
-  }
-  query = applySourceFilter(query, source);
+  let todayCountQuery = supabase
+    .from('reviews')
+    .select('*', { count: 'exact', head: true })
+    .gte('data', todayStr);
+  todayCountQuery = applySourceFilter(todayCountQuery, source);
 
-  const { data: reviews, error } = await query;
+  const [
+    { count: pendingCount, error: e1 },
+    { count: approvedCount, error: e2 },
+    { count: publishedCount, error: e3 },
+    { count: skippedCount, error: e4 },
+    { count: todayCount, error: e5 },
+    { count: stelle1Count, error: e6 },
+    { count: stelle2Count, error: e7 },
+    { count: stelle3Count, error: e8 },
+    { count: stelle4Count, error: e9 },
+    { count: stelle5Count, error: e10 },
+    { data: chartReviews, error: chartError },
+  ] = await Promise.all([
+    buildCountQuery({ stato: 'pending' }),
+    buildCountQuery({ stato: 'approved' }),
+    buildCountQuery({ stato: 'published' }),
+    buildCountQuery({ stato: 'skipped' }),
+    todayCountQuery,
+    buildCountQuery({ stelle: 1 }),
+    buildCountQuery({ stelle: 2 }),
+    buildCountQuery({ stelle: 3 }),
+    buildCountQuery({ stelle: 4 }),
+    buildCountQuery({ stelle: 5 }),
+    chartQuery,
+  ]);
 
-  if (error) {
-    return res.status(500).json({ errore: error.message });
-  }
+  const firstError = e1 || e2 || e3 || e4 || e5 || e6 || e7 || e8 || e9 || e10 || chartError;
+  if (firstError) return res.status(500).json({ errore: firstError.message });
 
-  const acc = buildStatsAccumulator();
-  const today = new Date();
+  const perSegment = { airport: 0, port: 0, station: 0, city: 0 };
+  const topTopic = {};
+  let flagReferral = 0;
+  let flagCross = 0;
+  let crossUsers = 0;
+  let primaPrenotazione = 0;
 
-  for (const review of reviews || []) {
+  for (const review of chartReviews || []) {
     const analysis = review.review_analysis?.[0] || {};
-    const topics = normalizeTopicList(analysis.topic).map((topic) => topic.trim().toLowerCase());
+    const topics = normalizeTopicList(analysis.topic).map((t) => t.trim().toLowerCase());
     const segmento = analysis.segmento;
-    const currentDate = new Date(review.data);
 
-    acc.total_reviews += 1;
-    if (
-      currentDate.getFullYear() === today.getFullYear()
-      && currentDate.getMonth() === today.getMonth()
-      && currentDate.getDate() === today.getDate()
-    ) {
-      acc.reviews_today += 1;
-    }
-    if (acc.per_stato[review.stato] !== undefined) acc.per_stato[review.stato] += 1;
-    if (acc.per_stelle[String(review.stelle)] !== undefined) acc.per_stelle[String(review.stelle)] += 1;
-    if (segmento && acc.per_segment[segmento] !== undefined) acc.per_segment[segmento] += 1;
-    if (analysis.flag_referral) acc.flag_referral += 1;
-    if (analysis.flag_cross) acc.flag_cross += 1;
-    if (analysis.cross) acc.cross_users += 1;
-    if (analysis.prima_prenotazione) acc.prima_prenotazione += 1;
-
+    if (segmento && perSegment[segmento] !== undefined) perSegment[segmento] += 1;
+    if (analysis.flag_referral) flagReferral += 1;
+    if (analysis.flag_cross) flagCross += 1;
+    if (analysis.cross) crossUsers += 1;
+    if (analysis.prima_prenotazione) primaPrenotazione += 1;
     for (const topic of topics) {
-      acc.top_topic[topic] = (acc.top_topic[topic] || 0) + 1;
+      topTopic[topic] = (topTopic[topic] || 0) + 1;
     }
   }
+
+  const totalReviews = (pendingCount || 0) + (approvedCount || 0) + (publishedCount || 0) + (skippedCount || 0);
 
   res.json({
     period,
-    ...serializeStats(acc),
+    reviews_today: todayCount || 0,
+    total_reviews: totalReviews,
+    per_stato: [
+      { stato: 'pending', n: pendingCount || 0 },
+      { stato: 'approved', n: approvedCount || 0 },
+      { stato: 'published', n: publishedCount || 0 },
+      { stato: 'skipped', n: skippedCount || 0 },
+    ],
+    per_stelle: [
+      { stelle: 1, n: stelle1Count || 0 },
+      { stelle: 2, n: stelle2Count || 0 },
+      { stelle: 3, n: stelle3Count || 0 },
+      { stelle: 4, n: stelle4Count || 0 },
+      { stelle: 5, n: stelle5Count || 0 },
+    ],
+    per_segment: Object.entries(perSegment).map(([segmento, count]) => ({ segmento, count })),
+    flag_referral: flagReferral,
+    flag_cross: flagCross,
+    cross_users: crossUsers,
+    prima_prenotazione: primaPrenotazione,
+    top_topic: Object.entries(topTopic)
+      .sort((a, b) => b[1] - a[1])
+      .map(([topic, count]) => ({ topic, count })),
   });
 });
 

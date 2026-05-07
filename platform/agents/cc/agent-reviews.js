@@ -159,6 +159,37 @@ function toISODate(d) {
   return d.toISOString().slice(0, 10);
 }
 
+function normalizeDateOnly(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoMatch) return isoMatch[1];
+
+  const italianMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (italianMatch) return `${italianMatch[3]}-${italianMatch[2]}-${italianMatch[1]}`;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function getBookingDateFromRow(row = {}) {
+  return normalizeDateOnly(
+    row.booking_date
+      || row.bookingDate
+      || row.booking_start_date
+      || row.bookingStartDate
+      || row.parking_start_date
+      || row.parkingStartDate
+      || row.check_in_date
+      || row.checkInDate
+      || row.arrival_date
+      || row.arrivalDate
+  );
+}
+
 async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null } = {}) {
   // La corrispondenza avviene via referenceId (solitamente l'email impostata nell'invito Trustpilot)
   const isEmail = referenceId && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(referenceId.trim());
@@ -167,7 +198,7 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
     console.warn(
       `[BO API] Corrispondenza non trovata per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}: referenceId mancante o non è un'email`
     );
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
 
   const endDate = new Date();
@@ -197,7 +228,7 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
       console.warn(
         `[BO API] Nessuna prenotazione trovata per email=${email} (trustpilot_id=${trustpilot_id})`
       );
-      return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+      return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
     }
 
     const lastRow = userRows[userRows.length - 1];
@@ -213,10 +244,11 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
       prima_prenotazione: primaPrenotazione,
       cross: segmentiUnici.length > 1,
       localita: lastRow.location_name || null,
+      booking_date: getBookingDateFromRow(lastRow),
     };
   } catch (err) {
     console.error(`[BO API] Errore chiamata booking-details: ${err.message}`);
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null };
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
 }
 
@@ -330,6 +362,7 @@ async function processaRecensione(trustpilot_id, testo, autore = '', metadata = 
     prima_prenotazione: datiBO.prima_prenotazione ? 1 : 0,
     cross: datiBO.cross ? 1 : 0,
     localita: datiBO.localita,
+    booking_date: datiBO.booking_date || null,
     risposta_generata: risposta,
     flag_referral: analisi.flag_referral ? 1 : 0,
     flag_cross: datiBO.cross ? 1 : 0,
