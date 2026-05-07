@@ -283,7 +283,7 @@ async function fetchRisposteApprovate() {
 
 async function analizzaRecensione(testo) {
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5',
     max_tokens: 512,
     system: SYSTEM_PROMPT_ANALISI,
     messages: [{ role: 'user', content: `Analizza questa recensione:\n\n"${testo}"` }],
@@ -324,7 +324,7 @@ async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
   }
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-5',
     max_tokens: 512,
     system: SYSTEM_PROMPT_RISPOSTA,
     messages: [
