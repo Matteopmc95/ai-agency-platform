@@ -420,6 +420,34 @@ app.get('/reviews/:id', async (req, res) => {
   });
 });
 
+// --- DEBUG ---
+// GET /debug/review/:id  — espone dati raw per diagnosticare mismatch review_analysis
+app.get('/debug/review/:id', async (req, res) => {
+  const review_id = parseInt(req.params.id, 10);
+
+  const [{ data: rawReview, error: e1 }, { data: rawAnalisi, error: e2 }] = await Promise.all([
+    supabase.from('reviews').select('*').eq('id', review_id).maybeSingle(),
+    supabase.from('review_analysis').select('*').eq('review_id', review_id).order('created_at', { ascending: false }),
+  ]);
+
+  const a = rawAnalisi?.[0] || {};
+  const combined = {
+    id: rawReview?.id,
+    stato: rawReview?.stato,
+    risposta_generata: a.risposta_generata || null,
+    tipo_risposta: a.tipo_risposta || null,
+    analisi_at: rawReview?.analisi_at || null,
+    review_analysis_count: rawAnalisi?.length ?? 0,
+  };
+
+  res.json({
+    reviews_raw: rawReview,
+    review_analysis_all_rows: rawAnalisi,
+    combined_response_preview: combined,
+    errors: { reviews: e1?.message || null, review_analysis: e2?.message || null },
+  });
+});
+
 // --- REPLY PLAY STORE ---
 // POST /reviews/:id/reply-play
 // Pubblica risposta su Google Play Store
