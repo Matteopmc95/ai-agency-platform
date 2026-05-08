@@ -92,6 +92,31 @@ async function pubblicaRispostaTrustpilot(trustpilot_id, testo_risposta) {
   );
 }
 
+async function salvaAnalisi(review_id, analisi) {
+  await supabase.from('review_analysis').upsert(
+    {
+      review_id,
+      topic: analisi.topic,
+      segmento: analisi.segmento,
+      prima_prenotazione: Boolean(analisi.prima_prenotazione),
+      cross: Boolean(analisi.cross),
+      localita: analisi.localita,
+      booking_date: analisi.booking_date || null,
+      risposta_generata: analisi.risposta_generata,
+      flag_referral: Boolean(analisi.flag_referral),
+      flag_cross: Boolean(analisi.flag_cross),
+      tipo_risposta: analisi.tipo_risposta || null,
+      created_at: new Date().toISOString(),
+    },
+    { onConflict: 'review_id' }
+  );
+
+  await supabase.from('reviews').update({
+    ...(analisi.booking_date ? { booking_date: analisi.booking_date } : {}),
+    analisi_at: new Date().toISOString(),
+  }).eq('id', review_id);
+}
+
 // --- WEBHOOK TRUSTPILOT ---
 // POST /webhook/trustpilot
 // Riceve nuove recensioni da Trustpilot (webhook configurato nel portale TP)
@@ -181,26 +206,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
     setImmediate(async () => {
       try {
         const analisi = await processaRecensione(trustpilot_id, testo, autore, metadata);
-
-        if (analisi.booking_date) {
-          await supabase
-            .from('reviews')
-            .update({ booking_date: analisi.booking_date })
-            .eq('id', review_id);
-        }
-
-        await supabase.from('review_analysis').insert({
-          review_id,
-          topic: analisi.topic,
-          segmento: analisi.segmento,
-          prima_prenotazione: Boolean(analisi.prima_prenotazione),
-          cross: Boolean(analisi.cross),
-          localita: analisi.localita,
-          risposta_generata: analisi.risposta_generata,
-          flag_referral: Boolean(analisi.flag_referral),
-          flag_cross: Boolean(analisi.flag_cross),
-        });
-
+        await salvaAnalisi(review_id, analisi);
         await log('agent-api', 'analisi_completata', {
           review_id,
           tipo_risposta: analisi.tipo_risposta,
@@ -466,33 +472,65 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       { referenceId: review.reference_id ?? null, data: review.data ?? null }
     );
 
-    await supabase.from('review_analysis').upsert(
-      {
-        review_id,
-        topic: analisi.topic,
-        segmento: analisi.segmento,
-        prima_prenotazione: Boolean(analisi.prima_prenotazione),
-        cross: Boolean(analisi.cross),
-        localita: analisi.localita,
-        risposta_generata: analisi.risposta_generata,
-        flag_referral: Boolean(analisi.flag_referral),
-        flag_cross: Boolean(analisi.flag_cross),
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: 'review_id' }
-    );
-
-    await supabase
-      .from('reviews')
-      .update({ booking_date: analisi.booking_date || null })
-      .eq('id', review_id);
-
+    await salvaAnalisi(review_id, analisi);
     await log('agent-api', 'risposta_rigenerata', { review_id });
     res.json({ ok: true, review_id, analisi });
   } catch (err) {
     await log('agent-api', 'regenerate_errore', { review_id, errore: err.message });
     res.status(500).json({ errore: err.message });
   }
+});
+
+// --- RIGENERA PENDING IN BULK ---
+// POST /reviews/regenerate-pending
+// Avvia in background l'analisi AI per tutte le recensioni pending senza risposta generata.
+app.post('/reviews/regenerate-pending', async (_req, res) => {
+  const { data: pending, error } = await supabase
+    .from('reviews')
+    .select('id, trustpilot_id, testo, autore, data, reference_id')
+    .eq('stato', 'pending')
+    .not('id', 'in',
+      supabase.from('review_analysis').select('review_id').not('risposta_generata', 'is', null)
+    )
+    .range(0, 9999);
+
+  if (error) {
+    return res.status(500).json({ errore: 'Errore lettura DB', dettaglio: error.message });
+  }
+
+  const totale = pending?.length ?? 0;
+  res.status(202).json({ ok: true, totale });
+
+  setImmediate(async () => {
+    let processate = 0;
+    let errori = 0;
+
+    for (const review of (pending ?? [])) {
+      try {
+        const analisi = await processaRecensione(
+          review.trustpilot_id,
+          review.testo,
+          review.autore,
+          { referenceId: review.reference_id ?? null, data: review.data ?? null }
+        );
+
+        await salvaAnalisi(review.id, analisi);
+        processate++;
+        if (processate % 10 === 0) {
+          await log('agent-api', 'regenerate_pending_progress', { processate, totale, errori });
+          console.log(`[regenerate-pending] ${processate}/${totale} processate, errori=${errori}`);
+        }
+      } catch (err) {
+        errori++;
+        await log('agent-api', 'regenerate_pending_errore', { review_id: review.id, errore: err.message });
+      }
+
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
+    await log('agent-api', 'regenerate_pending_completato', { processate, totale, errori });
+    console.log(`[regenerate-pending] completato: ${processate}/${totale}, errori=${errori}`);
+  });
 });
 
 // --- LOGS ---
@@ -700,8 +738,8 @@ app.get('/stats/topics-by-segment', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
-  avviaPollingPlayStore(supabase, log, processaRecensione);
-  avviaPollingApple(supabase, log, processaRecensione);
+  avviaPollingPlayStore(supabase, log, processaRecensione, salvaAnalisi);
+  avviaPollingApple(supabase, log, processaRecensione, salvaAnalisi);
 });
 
 module.exports = app;

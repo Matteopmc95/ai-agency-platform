@@ -29,7 +29,7 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
     return response.data.reviews || [];
   }
 
-  async function pollPlayStoreReviews(supabase, logFn, processaRecensioneFn) {
+  async function pollPlayStoreReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn) {
     try {
       const reviews = await fetchReviews();
       let nuove = 0;
@@ -67,25 +67,12 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
 
         nuove++;
 
-        if (processaRecensioneFn) {
+        if (processaRecensioneFn && salvaAnalisiFn) {
           const review_id = inserted.id;
           setImmediate(async () => {
             try {
               const analisi = await processaRecensioneFn(reviewId, testo, autore, { data });
-              if (analisi.booking_date) {
-                await supabase.from('reviews').update({ booking_date: analisi.booking_date }).eq('id', review_id);
-              }
-              await supabase.from('review_analysis').insert({
-                review_id,
-                topic: analisi.topic,
-                segmento: analisi.segmento,
-                prima_prenotazione: Boolean(analisi.prima_prenotazione),
-                cross: Boolean(analisi.cross),
-                localita: analisi.localita,
-                risposta_generata: analisi.risposta_generata,
-                flag_referral: Boolean(analisi.flag_referral),
-                flag_cross: Boolean(analisi.flag_cross),
-              });
+              await salvaAnalisiFn(review_id, analisi);
               await logFn('play-store-poller', 'analisi_completata', { review_id, tipo_risposta: analisi.tipo_risposta });
             } catch (err) {
               await logFn('play-store-poller', 'analisi_errore', { review_id, errore: err.message });
@@ -110,9 +97,9 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
     });
   }
 
-  function avviaPollingPlayStore(supabase, logFn, processaRecensioneFn) {
-    pollPlayStoreReviews(supabase, logFn, processaRecensioneFn);
-    return setInterval(() => pollPlayStoreReviews(supabase, logFn, processaRecensioneFn), POLL_INTERVAL_MS);
+  function avviaPollingPlayStore(supabase, logFn, processaRecensioneFn, salvaAnalisiFn) {
+    pollPlayStoreReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn);
+    return setInterval(() => pollPlayStoreReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn), POLL_INTERVAL_MS);
   }
 
   module.exports = { avviaPollingPlayStore, rispondiPlayStore };
