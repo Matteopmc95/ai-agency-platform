@@ -93,28 +93,50 @@ async function pubblicaRispostaTrustpilot(trustpilot_id, testo_risposta) {
 }
 
 async function salvaAnalisi(review_id, analisi) {
-  await supabase.from('review_analysis').upsert(
-    {
-      review_id,
-      topic: analisi.topic,
-      segmento: analisi.segmento,
-      prima_prenotazione: Boolean(analisi.prima_prenotazione),
-      cross: Boolean(analisi.cross),
-      localita: analisi.localita,
-      booking_date: analisi.booking_date || null,
-      risposta_generata: analisi.risposta_generata,
-      flag_referral: Boolean(analisi.flag_referral),
-      flag_cross: Boolean(analisi.flag_cross),
-      tipo_risposta: analisi.tipo_risposta || null,
-      created_at: new Date().toISOString(),
-    },
-    { onConflict: 'review_id' }
-  );
+  console.log('[salvaAnalisi] data:', JSON.stringify(analisi));
 
-  await supabase.from('reviews').update({
-    ...(analisi.booking_date ? { booking_date: analisi.booking_date } : {}),
+  const raPayload = {
+    review_id,
+    topic: analisi.topic,
+    segmento: analisi.segmento,
+    prima_prenotazione: Boolean(analisi.prima_prenotazione),
+    cross: Boolean(analisi.cross),
+    localita: analisi.localita,
+    booking_date: analisi.booking_date || null,
+    risposta_generata: analisi.risposta_generata,
+    flag_referral: Boolean(analisi.flag_referral),
+    flag_cross: Boolean(analisi.flag_cross),
+    tipo_risposta: analisi.tipo_risposta || null,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error: raError } = await supabase
+    .from('review_analysis')
+    .upsert(raPayload, { onConflict: 'review_id' });
+
+  if (raError) {
+    console.error('[salvaAnalisi] errore review_analysis:', raError.message, raError.details);
+    await log('agent-api', 'salva_analisi_errore', { review_id, tabella: 'review_analysis', errore: raError.message });
+    throw new Error(`salvaAnalisi review_analysis: ${raError.message}`);
+  }
+
+  const reviewPayload = {
     analisi_at: new Date().toISOString(),
-  }).eq('id', review_id);
+    ...(analisi.booking_date ? { booking_date: analisi.booking_date } : {}),
+  };
+
+  const { error: rError } = await supabase
+    .from('reviews')
+    .update(reviewPayload)
+    .eq('id', review_id);
+
+  if (rError) {
+    console.error('[salvaAnalisi] errore reviews:', rError.message, rError.details);
+    await log('agent-api', 'salva_analisi_errore', { review_id, tabella: 'reviews', errore: rError.message });
+    throw new Error(`salvaAnalisi reviews: ${rError.message}`);
+  }
+
+  await log('agent-api', 'analisi_salvata', { review_id, tipo_risposta: analisi.tipo_risposta });
 }
 
 // --- WEBHOOK TRUSTPILOT ---
@@ -472,6 +494,7 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       { referenceId: review.reference_id ?? null, data: review.data ?? null }
     );
 
+    console.log('[regenerate] saving analysis', review_id);
     await salvaAnalisi(review_id, analisi);
     await log('agent-api', 'risposta_rigenerata', { review_id });
     res.json({ ok: true, review_id, analisi });
