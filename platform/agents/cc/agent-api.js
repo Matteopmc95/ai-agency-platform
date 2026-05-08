@@ -5,7 +5,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const { processaRecensione } = require('./agent-reviews');
-const { avviaPollingPlayStore, rispondiPlayStore } = require('./sources/play-store');
+const { avviaPollingPlayStore, rispondiPlayStore, fetchReviewsSince } = require('./sources/play-store');
 const { avviaPollingApple } = require('./sources/apple-store');
 
 const app = express();
@@ -828,6 +828,134 @@ app.get('/admin/generate-missing-ai/status', authMiddleware, (_req, res) => {
     processed: jobState.processed,
     total:     jobState.total,
     errors:    jobState.errors,
+  });
+});
+
+// --- ADMIN: IMPORT PLAY STORE BULK ---
+
+const PS_BULK_CUTOFF = new Date('2026-05-04T00:00:00Z').getTime();
+const AI_DELAY_PS    = 1500;
+
+const psJobState = {
+  status: 'idle',
+  jobId: null,
+  startedAt: null,
+  total: 0,
+  inserted: 0,
+  skipped: 0,
+  aiOk: 0,
+  errors: 0,
+};
+
+// POST /admin/import-playstore-bulk
+app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
+  if (psJobState.status === 'running') {
+    return res.status(409).json({
+      errore: 'Job già in esecuzione',
+      inserted: psJobState.inserted,
+      total: psJobState.total,
+    });
+  }
+
+  const jobId = Date.now().toString(36);
+  Object.assign(psJobState, {
+    status: 'running', jobId,
+    startedAt: new Date().toISOString(),
+    total: 0, inserted: 0, skipped: 0, aiOk: 0, errors: 0,
+  });
+
+  res.json({ jobId, status: 'started', cutoff: '2026-05-04', note: 'Chiama /admin/import-playstore-bulk/status per monitorare' });
+
+  setImmediate(async () => {
+    let reviews = [];
+    try {
+      reviews = await fetchReviewsSince(PS_BULK_CUTOFF);
+      psJobState.total = reviews.length;
+      console.log(`[PS BULK] Trovate ${reviews.length} reviews dal 2026-05-04`);
+    } catch (err) {
+      console.error('[PS BULK] Errore fetch Play Store:', err.message);
+      psJobState.status = 'error';
+      return;
+    }
+
+    for (let i = 0; i < reviews.length; i++) {
+      const review     = reviews[i];
+      const userComment = review.comments?.[0]?.userComment;
+      if (!userComment) { psJobState.skipped++; continue; }
+
+      const reviewId = review.reviewId;
+      const stelle   = userComment.starRating;
+      const testo    = userComment.text || '';
+      const autore   = review.authorDetails?.name || 'Anonimo';
+      const seconds  = parseInt(userComment.lastModified?.seconds || 0);
+      const data     = new Date(seconds * 1000).toISOString();
+
+      // Deduplicazione
+      const { data: esistente } = await supabase
+        .from('reviews').select('id').eq('trustpilot_id', reviewId).maybeSingle();
+      if (esistente) { psJobState.skipped++; continue; }
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('reviews')
+        .insert({ trustpilot_id: reviewId, testo, autore, data, stelle, stato: 'pending', source: 'playstore' })
+        .select('id').single();
+
+      if (insertErr) {
+        console.error(`[PS BULK] insert ${reviewId}: ${insertErr.message}`);
+        psJobState.errors++;
+        continue;
+      }
+      psJobState.inserted++;
+
+      // AI solo per stelle >= 4
+      if (stelle >= 4) {
+        let analisi = null;
+        for (let t = 1; t <= 3; t++) {
+          try {
+            analisi = await processaRecensione(reviewId, testo, autore, { data });
+            break;
+          } catch (err) {
+            const is429 = err.message?.includes('429') || err.message?.includes('rate') || err.message?.includes('overload');
+            if (is429 && t < 3) {
+              console.warn(`[PS BULK] 429 review ${reviewId} — attendo 30s (tentativo ${t}/3)`);
+              await new Promise(r => setTimeout(r, 30000));
+            } else {
+              console.error(`[PS BULK] AI review ${reviewId}: ${err.message}`);
+              psJobState.errors++;
+              break;
+            }
+          }
+        }
+        if (analisi) {
+          try {
+            await salvaAnalisi(inserted.id, analisi);
+            psJobState.aiOk++;
+          } catch (err) {
+            console.error(`[PS BULK] salva review_id=${inserted.id}: ${err.message}`);
+            psJobState.errors++;
+          }
+          await new Promise(r => setTimeout(r, AI_DELAY_PS));
+        }
+      }
+    }
+
+    psJobState.status = 'done';
+    console.log(`[PS BULK] Completato: ${psJobState.inserted} inserite, ${psJobState.aiOk} AI ok, ${psJobState.skipped} skip, ${psJobState.errors} errori`);
+    await log('agent-api', 'ps_bulk_completato', { inserted: psJobState.inserted, aiOk: psJobState.aiOk, errors: psJobState.errors });
+  });
+});
+
+// GET /admin/import-playstore-bulk/status
+app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
+  res.json({
+    jobId:     psJobState.jobId,
+    status:    psJobState.status,
+    startedAt: psJobState.startedAt,
+    total:     psJobState.total,
+    inserted:  psJobState.inserted,
+    skipped:   psJobState.skipped,
+    aiOk:      psJobState.aiOk,
+    errors:    psJobState.errors,
   });
 });
 
