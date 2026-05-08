@@ -188,7 +188,7 @@ function normalizeDateOnly(value) {
   return parsed.toISOString().slice(0, 10);
 }
 
-async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null } = {}) {
+async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null, data = null } = {}) {
   if (!referenceId) {
     console.warn(
       `[BO API] referenceId mancante per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}`
@@ -196,9 +196,13 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
     return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
 
-  const endDate = new Date();
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - 90);
+  const reviewDate = data ? new Date(data) : new Date();
+  const startDate = new Date(reviewDate);
+  startDate.setDate(startDate.getDate() - 15);
+  const endDate = new Date(reviewDate);
+  endDate.setDate(endDate.getDate() + 15);
+
+  console.log(`[bo] range: start=${toISODate(startDate)}, end=${toISODate(endDate)}, booking_id=${referenceId}`);
 
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
 

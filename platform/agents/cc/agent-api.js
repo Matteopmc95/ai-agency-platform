@@ -124,6 +124,7 @@ app.post('/webhook/trustpilot', async (req, res) => {
     const metadata = {
       referenceId: r.referenceId || null,
       consumer_id: r.consumer?.id || null,
+      data,
     };
 
     if (!trustpilot_id || !testo) {
@@ -452,7 +453,7 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
       review.trustpilot_id,
       review.testo,
       review.autore,
-      { referenceId: review.reference_id ?? null }
+      { referenceId: review.reference_id ?? null, data: review.data ?? null }
     );
 
     await supabase.from('review_analysis').upsert(
