@@ -739,7 +739,7 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
   avviaPollingPlayStore(supabase, log, processaRecensione, salvaAnalisi);
-  avviaPollingApple(supabase, log, processaRecensione, salvaAnalisi);
+  avviaPollingApple(supabase, log);
 });
 
 module.exports = app;

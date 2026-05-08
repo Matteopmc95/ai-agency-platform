@@ -57,7 +57,7 @@ if (!process.env.APPLE_ISSUER_ID || !process.env.APPLE_KEY_ID || !process.env.AP
     return response.data?.data || [];
   }
 
-  async function pollAppleReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn) {
+  async function pollAppleReviews(supabase, logFn) {
     try {
       const reviews = await fetchReviews();
       let nuove = 0;
@@ -82,11 +82,9 @@ if (!process.env.APPLE_ISSUER_ID || !process.env.APPLE_KEY_ID || !process.env.AP
 
         if (esistente) continue;
 
-        const { data: inserted, error } = await supabase
+        const { error } = await supabase
           .from('reviews')
-          .insert({ trustpilot_id: reviewId, testo, autore, data, stelle, stato: 'pending', source: 'apple' })
-          .select('id')
-          .single();
+          .insert({ trustpilot_id: reviewId, testo, autore, data, stelle, stato: 'pending', source: 'apple' });
 
         if (error) {
           await logFn('apple-store-poller', 'insert_errore', { reviewId, errore: error.message });
@@ -94,19 +92,6 @@ if (!process.env.APPLE_ISSUER_ID || !process.env.APPLE_KEY_ID || !process.env.AP
         }
 
         nuove++;
-
-        if (processaRecensioneFn && salvaAnalisiFn) {
-          const review_id = inserted.id;
-          setImmediate(async () => {
-            try {
-              const analisi = await processaRecensioneFn(reviewId, testo, autore, { data });
-              await salvaAnalisiFn(review_id, analisi);
-              await logFn('apple-store-poller', 'analisi_completata', { review_id, tipo_risposta: analisi.tipo_risposta });
-            } catch (err) {
-              await logFn('apple-store-poller', 'analisi_errore', { review_id, errore: err.message });
-            }
-          });
-        }
       }
 
       await logFn('apple-store-poller', 'poll_completato', { nuove, totale_fetched: reviews.length });
@@ -115,9 +100,9 @@ if (!process.env.APPLE_ISSUER_ID || !process.env.APPLE_KEY_ID || !process.env.AP
     }
   }
 
-  function avviaPollingApple(supabase, logFn, processaRecensioneFn, salvaAnalisiFn) {
-    pollAppleReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn);
-    return setInterval(() => pollAppleReviews(supabase, logFn, processaRecensioneFn, salvaAnalisiFn), POLL_INTERVAL_MS);
+  function avviaPollingApple(supabase, logFn) {
+    pollAppleReviews(supabase, logFn);
+    return setInterval(() => pollAppleReviews(supabase, logFn), POLL_INTERVAL_MS);
   }
 
   module.exports = { avviaPollingApple };
