@@ -486,7 +486,7 @@ app.get('/reviews/:id', async (req, res) => {
 });
 
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
-app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
+app.get('/admin/check-google-credentials', async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
   const result = {
     envPresent: Boolean(raw),
