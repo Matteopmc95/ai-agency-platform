@@ -485,6 +485,54 @@ app.get('/reviews/:id', async (req, res) => {
   });
 });
 
+// --- ADMIN: CHECK GOOGLE CREDENTIALS ---
+app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
+  const result = {
+    envPresent: Boolean(raw),
+    envLength: raw?.length ?? 0,
+    decodedOk: false,
+    clientEmail: null,
+    projectId: null,
+    apiTestStatus: null,
+    apiTestMessage: null,
+  };
+
+  if (!raw) return res.json(result);
+
+  let creds;
+  try {
+    creds = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
+    result.decodedOk = true;
+    result.clientEmail = creds.client_email ?? null;
+    result.projectId   = creds.project_id ?? null;
+  } catch (err) {
+    result.apiTestStatus  = 'decode_error';
+    result.apiTestMessage = err.message;
+    return res.json(result);
+  }
+
+  try {
+    const { google } = require('googleapis');
+    const auth = new google.auth.GoogleAuth({
+      credentials: creds,
+      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+    });
+    const ap = google.androidpublisher({ version: 'v3', auth });
+    await ap.reviews.list({ packageName: 'it.parkingmycar.parkingmyapp', maxResults: 1 });
+    result.apiTestStatus  = 'ok';
+    result.apiTestMessage = 'Credenziali valide, app accessibile';
+  } catch (err) {
+    const status = err.response?.status ?? err.code ?? 'unknown';
+    result.apiTestStatus  = String(status);
+    result.apiTestMessage = status === 401 || status === 403
+      ? 'Credenziali presenti ma autorizzazione mancante (service account non aggiunto al Play Console?)'
+      : err.message;
+  }
+
+  res.json(result);
+});
+
 // --- DEBUG ---
 // GET /debug/review/:id  — espone dati raw per diagnosticare mismatch review_analysis
 app.get('/debug/review/:id', async (req, res) => {
@@ -648,6 +696,138 @@ app.post('/reviews/regenerate-pending', async (_req, res) => {
 
     await log('agent-api', 'regenerate_pending_completato', { processate, totale, errori });
     console.log(`[regenerate-pending] completato: ${processate}/${totale}, errori=${errori}`);
+  });
+});
+
+// --- ADMIN: GENERA RISPOSTE AI MANCANTI ---
+
+const jobState = {
+  status: 'idle',      // idle | running | done | error
+  jobId: null,
+  startedAt: null,
+  total: 0,
+  processed: 0,
+  errors: 0,
+};
+
+async function fetchReviewsSenzaAI() {
+  const PAGE = 1000;
+  const raIds = new Set();
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('review_analysis')
+      .select('review_id')
+      .not('risposta_generata', 'is', null)
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    data.forEach(r => raIds.add(r.review_id));
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  const reviews = [];
+  from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id, trustpilot_id, testo, autore, data, reference_id, source')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    data.forEach(r => { if (!raIds.has(r.id)) reviews.push(r); });
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return reviews;
+}
+
+// POST /admin/generate-missing-ai — avvia il job in background
+app.post('/admin/generate-missing-ai', authMiddleware, async (_req, res) => {
+  if (jobState.status === 'running') {
+    return res.status(409).json({
+      errore: 'Job già in esecuzione',
+      processed: jobState.processed,
+      total: jobState.total,
+    });
+  }
+
+  let reviews;
+  try {
+    reviews = await fetchReviewsSenzaAI();
+  } catch (err) {
+    return res.status(500).json({ errore: err.message });
+  }
+
+  const jobId = Date.now().toString(36);
+  Object.assign(jobState, {
+    status: 'running',
+    jobId,
+    startedAt: new Date().toISOString(),
+    total: reviews.length,
+    processed: 0,
+    errors: 0,
+  });
+
+  res.json({ jobId, status: 'started', totalToProcess: reviews.length });
+
+  setImmediate(async () => {
+    for (let i = 0; i < reviews.length; i++) {
+      const r = reviews[i];
+      let analisi = null;
+
+      for (let tentativo = 1; tentativo <= 3; tentativo++) {
+        try {
+          analisi = await processaRecensione(
+            r.trustpilot_id,
+            r.testo,
+            r.autore,
+            { referenceId: r.reference_id || null, data: r.data || null }
+          );
+          break;
+        } catch (err) {
+          const is429 = err.message?.includes('429') || err.message?.includes('rate') || err.message?.includes('overload');
+          if (is429 && tentativo < 3) {
+            console.warn(`[AI BATCH] 429 review_id=${r.id} — attendo 30s (tentativo ${tentativo}/3)`);
+            await new Promise(res => setTimeout(res, 30000));
+          } else {
+            console.error(`[AI BATCH] errore review_id=${r.id}: ${err.message}`);
+            jobState.errors++;
+            analisi = null;
+            break;
+          }
+        }
+      }
+
+      if (analisi) {
+        try {
+          await salvaAnalisi(r.id, analisi);
+          jobState.processed++;
+        } catch (err) {
+          console.error(`[AI BATCH] salva review_id=${r.id}: ${err.message}`);
+          jobState.errors++;
+        }
+      }
+
+      await new Promise(res => setTimeout(res, 1500));
+    }
+
+    jobState.status = 'done';
+    console.log(`[AI BATCH] Completato: ${jobState.processed}/${jobState.total} ok, ${jobState.errors} errori`);
+    await log('agent-api', 'ai_batch_completato', { processed: jobState.processed, total: jobState.total, errors: jobState.errors });
+  });
+});
+
+// GET /admin/generate-missing-ai/status — stato del job in corso
+app.get('/admin/generate-missing-ai/status', authMiddleware, (_req, res) => {
+  res.json({
+    jobId:     jobState.jobId,
+    status:    jobState.status,
+    startedAt: jobState.startedAt,
+    processed: jobState.processed,
+    total:     jobState.total,
+    errors:    jobState.errors,
   });
 });
 
