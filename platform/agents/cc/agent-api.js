@@ -78,18 +78,81 @@ async function authMiddleware(req, res, next) {
   next();
 }
 
-async function pubblicaRispostaTrustpilot(trustpilot_id, testo_risposta) {
-  const url = `https://api.trustpilot.com/v1/private/reviews/${trustpilot_id}/reply`;
-  await axios.post(
-    url,
-    { message: testo_risposta },
+// Cache OAuth token in memoria: { token, expiresAt }
+let _tpTokenCache = null;
+
+async function getTrustpilotAccessToken() {
+  const now = Date.now();
+  if (_tpTokenCache && now < _tpTokenCache.expiresAt) {
+    return _tpTokenCache.token;
+  }
+
+  const apiKey = process.env.TRUSTPILOT_API_KEY;
+  const apiSecret = process.env.TRUSTPILOT_API_SECRET;
+  const username = process.env.TRUSTPILOT_USERNAME;
+  const password = process.env.TRUSTPILOT_PASSWORD;
+
+  if (!apiKey || !apiSecret || !username || !password) {
+    throw new Error('Credenziali Trustpilot OAuth mancanti (TRUSTPILOT_API_KEY, TRUSTPILOT_API_SECRET, TRUSTPILOT_USERNAME, TRUSTPILOT_PASSWORD)');
+  }
+
+  const basicAuth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+  const params = new URLSearchParams({ grant_type: 'password', username, password });
+
+  console.log('[tp-oauth] richiedendo access token...');
+  const response = await axios.post(
+    'https://api.trustpilot.com/v1/oauth/oauth-business-users-for-applications/accesstoken',
+    params.toString(),
     {
       headers: {
-        Authorization: `Bearer ${process.env.TRUSTPILOT_ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
+        Authorization: `Basic ${basicAuth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
     }
   );
+
+  const { access_token, expires_in } = response.data;
+  if (!access_token) throw new Error('Trustpilot OAuth: access_token assente nella risposta');
+
+  // Scade dopo expires_in secondi; cache 95% del TTL per sicurezza
+  _tpTokenCache = {
+    token: access_token,
+    expiresAt: now + Math.floor((expires_in ?? 360000) * 0.95) * 1000,
+  };
+  console.log(`[tp-oauth] token ottenuto, scade in ${expires_in}s`);
+  return access_token;
+}
+
+async function pubblicaRispostaTrustpilot(trustpilot_id, testo_risposta) {
+  const token = await getTrustpilotAccessToken();
+  const url = `https://api.trustpilot.com/v1/private/reviews/${trustpilot_id}/reply`;
+
+  console.log('[trustpilot] using token:', token?.substring(0, 20) + '...');
+  console.log('[trustpilot] reviewId:', trustpilot_id);
+  console.log('[trustpilot] url:', url);
+
+  try {
+    await axios.post(
+      url,
+      { message: testo_risposta },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    console.log('[trustpilot] risposta pubblicata con successo, reviewId:', trustpilot_id);
+  } catch (err) {
+    console.error('[trustpilot] errore status:', err.response?.status);
+    console.error('[trustpilot] errore body:', JSON.stringify(err.response?.data));
+    console.error('[trustpilot] errore url:', err.config?.url);
+    if (err.response?.status === 401) {
+      _tpTokenCache = null;
+      console.error('[trustpilot] 401 — cache token invalidata');
+    }
+    throw err;
+  }
 }
 
 async function salvaAnalisi(review_id, analisi) {
