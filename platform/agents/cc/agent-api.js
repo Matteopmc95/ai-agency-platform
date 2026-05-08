@@ -697,6 +697,65 @@ app.get('/stats/topics-by-segment', async (req, res) => {
   });
 });
 
+// --- SYNC STATO TRUSTPILOT ---
+// POST /reviews/sync-trustpilot-status
+// Verifica se le recensioni pending hanno già una risposta su Trustpilot
+// e aggiorna lo stato nel DB. Eseguito in background.
+app.post('/reviews/sync-trustpilot-status', async (req, res) => {
+  const { data: pendingReviews, error } = await supabase
+    .from('reviews')
+    .select('id, trustpilot_id')
+    .eq('stato', 'pending')
+    .eq('source', 'trustpilot');
+
+  if (error) {
+    return res.status(500).json({ errore: 'Errore lettura DB', dettaglio: error.message });
+  }
+
+  const totale = pendingReviews?.length ?? 0;
+  res.status(202).json({ ok: true, totale });
+
+  setImmediate(async () => {
+    const stats = { processate: 0, già_risposte: 0, errori: 0 };
+
+    for (const review of (pendingReviews ?? [])) {
+      try {
+        const { data: tpData } = await axios.get(
+          `https://api.trustpilot.com/v1/private/reviews/${review.trustpilot_id}`,
+          {
+            headers: { Authorization: `Bearer ${process.env.TRUSTPILOT_ACCESS_TOKEN}` },
+            timeout: 8000,
+          }
+        );
+
+        stats.processate++;
+
+        const reply = tpData?.companyReply ?? tpData?.reply ?? null;
+        if (reply?.message) {
+          const pubblicata_at = reply.publishedAt ?? reply.createdAt ?? new Date().toISOString();
+
+          await supabase.from('reviews').update({
+            stato: 'published',
+            risposta_pubblicata: reply.message,
+            pubblicata_at,
+          }).eq('id', review.id);
+
+          stats.già_risposte++;
+          await log('agent-api', 'sync_tp_già_risposta', { review_id: review.id, trustpilot_id: review.trustpilot_id });
+        }
+      } catch (err) {
+        stats.errori++;
+        await log('agent-api', 'sync_tp_errore', { review_id: review.id, trustpilot_id: review.trustpilot_id, errore: err.message });
+      }
+
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    await log('agent-api', 'sync_tp_completato', stats);
+    console.log('[sync-trustpilot-status] completato:', stats);
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
