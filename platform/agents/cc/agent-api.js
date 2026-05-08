@@ -344,7 +344,10 @@ app.get('/reviews', async (req, res) => {
     limit: lim,
     offset: off,
     recensioni: (recensioni || []).map((r) => {
-      const a = (r.review_analysis || []).sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {};
+      const analysisData = r.review_analysis;
+      const a = Array.isArray(analysisData)
+        ? analysisData.sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {}
+        : (analysisData && typeof analysisData === 'object' ? analysisData : {});
       return {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
@@ -388,7 +391,10 @@ app.get('/reviews/:id', async (req, res) => {
   if (error) return res.status(500).json({ errore: error.message });
   if (!r) return res.status(404).json({ errore: 'Non trovata' });
 
-  const a = (r.review_analysis || []).sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {};
+  const analysisData = r.review_analysis;
+  const a = Array.isArray(analysisData)
+    ? analysisData.sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {}
+    : (analysisData && typeof analysisData === 'object' ? analysisData : {});
   res.json({
     id: r.id,
     trustpilot_id: r.trustpilot_id,
