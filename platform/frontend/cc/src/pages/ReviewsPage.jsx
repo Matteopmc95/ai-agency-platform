@@ -223,7 +223,24 @@ export default function ReviewsPage() {
           </div>
 
           {reviewsData?.recensioni?.length ? (
-            reviewsData.recensioni.map((review) => <ReviewRow key={review.id} review={review} />)
+            reviewsData.recensioni.map((review) => (
+              <ReviewRow
+                key={review.id}
+                review={review}
+                onUpdate={(id, updates) =>
+                  setReviewsData((current) =>
+                    current
+                      ? {
+                          ...current,
+                          recensioni: current.recensioni.map((r) =>
+                            r.id === id ? { ...r, ...updates } : r
+                          ),
+                        }
+                      : current
+                  )
+                }
+              />
+            ))
           ) : (
             <div className="rounded-[16px] border border-dashed border-neutral-200 bg-white px-5 py-12 text-center shadow-sm">
               <p className="text-base font-semibold text-ink">Nessuna recensione trovata</p>
