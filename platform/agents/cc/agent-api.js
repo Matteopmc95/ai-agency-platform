@@ -235,27 +235,32 @@ app.post('/reviews/:id/approve', async (req, res) => {
 
   const risposta_custom = req.body?.risposta_custom?.trim() || null;
 
-  let testo_risposta = risposta_custom;
+  const { data: analisiRecord } = await supabase
+    .from('review_analysis')
+    .select('risposta_generata')
+    .eq('review_id', review_id)
+    .maybeSingle();
 
-  if (!testo_risposta) {
-    const { data: analisi } = await supabase
-      .from('review_analysis')
-      .select('risposta_generata')
-      .eq('review_id', review_id)
-      .maybeSingle();
-
-    testo_risposta = analisi?.risposta_generata?.trim() || null;
-  }
+  const risposta_generata = analisiRecord?.risposta_generata?.trim() || null;
+  const testo_risposta = risposta_custom || risposta_generata;
 
   if (!testo_risposta) {
     return res.status(422).json({ errore: 'Nessuna risposta disponibile: fornisci una risposta_custom o attendi la generazione AI' });
   }
 
+  const risposta_modificata = !!(risposta_custom && risposta_generata && risposta_custom !== risposta_generata);
+
   try {
     await pubblicaRispostaTrustpilot(review.trustpilot_id, testo_risposta);
 
-    await supabase.from('reviews').update({ stato: 'published' }).eq('id', review_id);
-    await log('agent-api', 'reply_pubblicata', { review_id, trustpilot_id: review.trustpilot_id });
+    await supabase.from('reviews').update({
+      stato: 'published',
+      risposta_pubblicata: testo_risposta,
+      risposta_modificata,
+      pubblicata_at: new Date().toISOString(),
+    }).eq('id', review_id);
+
+    await log('agent-api', 'reply_pubblicata', { review_id, trustpilot_id: review.trustpilot_id, risposta_modificata });
 
     res.json({ ok: true, review_id, trustpilot_id: review.trustpilot_id, risposta_pubblicata: testo_risposta });
   } catch (err) {
@@ -405,27 +410,32 @@ app.post('/reviews/:id/reply-play', async (req, res) => {
 
   const risposta_custom = req.body?.risposta_custom?.trim() || null;
 
-  let testo_risposta = risposta_custom;
+  const { data: analisiRecordPlay } = await supabase
+    .from('review_analysis')
+    .select('risposta_generata')
+    .eq('review_id', review_id)
+    .maybeSingle();
 
-  if (!testo_risposta) {
-    const { data: analisi } = await supabase
-      .from('review_analysis')
-      .select('risposta_generata')
-      .eq('review_id', review_id)
-      .maybeSingle();
-
-    testo_risposta = analisi?.risposta_generata?.trim() || null;
-  }
+  const risposta_generata_play = analisiRecordPlay?.risposta_generata?.trim() || null;
+  const testo_risposta = risposta_custom || risposta_generata_play;
 
   if (!testo_risposta) {
     return res.status(422).json({ errore: 'Nessuna risposta disponibile: fornisci risposta_custom o attendi la generazione AI' });
   }
 
+  const risposta_modificata_play = !!(risposta_custom && risposta_generata_play && risposta_custom !== risposta_generata_play);
+
   try {
     await rispondiPlayStore(review.trustpilot_id, testo_risposta);
 
-    await supabase.from('reviews').update({ stato: 'published' }).eq('id', review_id);
-    await log('agent-api', 'reply_playstore_pubblicata', { review_id, play_review_id: review.trustpilot_id });
+    await supabase.from('reviews').update({
+      stato: 'published',
+      risposta_pubblicata: testo_risposta,
+      risposta_modificata: risposta_modificata_play,
+      pubblicata_at: new Date().toISOString(),
+    }).eq('id', review_id);
+
+    await log('agent-api', 'reply_playstore_pubblicata', { review_id, play_review_id: review.trustpilot_id, risposta_modificata: risposta_modificata_play });
 
     res.json({ ok: true, review_id, play_review_id: review.trustpilot_id, risposta_pubblicata: testo_risposta });
   } catch (err) {

@@ -188,6 +188,34 @@ function normalizeDateOnly(value) {
   return parsed.toISOString().slice(0, 10);
 }
 
+// Cache in memoria per i CSV scaricati dal BO: chiave "start-end", scadenza 1 ora
+const boCache = new Map();
+const BO_CACHE_TTL_MS = 60 * 60 * 1000;
+
+async function fetchBOChunk(auth, startDate, endDate) {
+  const key = `${toISODate(startDate)}-${toISODate(endDate)}`;
+  const cached = boCache.get(key);
+  if (cached && Date.now() - cached.ts < BO_CACHE_TTL_MS) {
+    return cached.rows;
+  }
+
+  const response = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: 'text/csv',
+    },
+    params: {
+      start_date: toISODate(startDate),
+      end_date: toISODate(endDate),
+    },
+    timeout: 15000,
+  });
+
+  const rows = parseCSV(response.data);
+  boCache.set(key, { rows, ts: Date.now() });
+  return rows;
+}
+
 async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null, data = null } = {}) {
   if (!referenceId) {
     console.warn(
@@ -196,95 +224,111 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
     return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
 
-  const reviewDate = data ? new Date(data) : new Date();
-  const startDate = new Date(reviewDate);
-  startDate.setDate(startDate.getDate() - 15);
-  const endDate = new Date(reviewDate);
-  endDate.setDate(endDate.getDate() + 15);
-
-  console.log(`[bo] range: start=${toISODate(startDate)}, end=${toISODate(endDate)}, transaction_id=${referenceId}`);
-
+  const transactionId = String(referenceId).trim();
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
 
+  // La prenotazione è sempre PRIMA della review: cerchiamo a ritroso fino a 6 mesi
+  const endDate = data ? new Date(data) : new Date();
+  const limitDate = new Date(endDate);
+  limitDate.setDate(limitDate.getDate() - 180);
+
+  let chunkEnd = new Date(endDate);
+  let attempt = 0;
+
   try {
-    const response = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
-      headers: {
-        Authorization: `Basic ${auth}`,
-        Accept: 'text/csv',
-      },
-      params: {
-        start_date: toISODate(startDate),
-        end_date: toISODate(endDate),
-      },
-      timeout: 10000,
-    });
+    while (chunkEnd > limitDate) {
+      attempt++;
+      const chunkStart = new Date(chunkEnd);
+      chunkStart.setDate(chunkStart.getDate() - 31);
+      if (chunkStart < limitDate) chunkStart.setTime(limitDate.getTime());
 
-    const rows = parseCSV(response.data);
-    const transactionId = String(referenceId).trim();
-    const bookingRow = rows.find(r => String(r.transaction_id ?? '').trim() === transactionId);
+      const rows = await fetchBOChunk(auth, chunkStart, chunkEnd);
+      const bookingRow = rows.find(r => String(r.transaction_id ?? '').trim() === transactionId);
 
-    console.log(`[bo] cerco transaction_id=${transactionId}, trovato=${!!bookingRow}, parking_type=${bookingRow?.parking_type ?? 'n/a'}`);
+      console.log(`[bo] tentativo ${attempt}: range ${toISODate(chunkStart)} - ${toISODate(chunkEnd)}, trovato=${!!bookingRow}, transaction_id=${transactionId}`);
 
-    if (!bookingRow) {
-      return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
+      if (bookingRow) {
+        const bookingDate = normalizeDateOnly(bookingRow.booking_start);
+        const firstBookingDate = normalizeDateOnly(bookingRow.user_first_booking_date);
+        const primaPrenotazione = !!(bookingDate && firstBookingDate && firstBookingDate === bookingDate);
+
+        const firstParkingType = bookingRow.user_first_booking_parking_type?.trim() || null;
+        const currentParkingType = bookingRow.parking_type?.trim() || null;
+        const cross = !!(firstParkingType && currentParkingType && firstParkingType !== currentParkingType);
+
+        return {
+          segmento: currentParkingType || null,
+          prima_prenotazione: primaPrenotazione,
+          cross,
+          localita: bookingRow.location_name || null,
+          booking_date: bookingDate,
+        };
+      }
+
+      // Sposta la finestra indietro di 31 giorni
+      chunkEnd = new Date(chunkStart);
     }
 
-    const bookingDate = normalizeDateOnly(bookingRow.booking_start);
-    const firstBookingDate = normalizeDateOnly(bookingRow.user_first_booking_date);
-
-    // prima_prenotazione = true se booking_start coincide con user_first_booking_date
-    const primaPrenotazione = !!(bookingDate && firstBookingDate && firstBookingDate === bookingDate);
-
-    // cross = true se il primo segmento dell'utente è diverso dal segmento corrente
-    const firstParkingType = bookingRow.user_first_booking_parking_type?.trim() || null;
-    const currentParkingType = bookingRow.parking_type?.trim() || null;
-    const cross = !!(firstParkingType && currentParkingType && firstParkingType !== currentParkingType);
-
-    return {
-      segmento: currentParkingType || null,
-      prima_prenotazione: primaPrenotazione,
-      cross,
-      localita: bookingRow.location_name || null,
-      booking_date: bookingDate,
-    };
+    console.warn(`[bo] transaction_id=${transactionId} non trovato in 6 mesi di storico (${attempt} tentativi)`);
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   } catch (err) {
     console.error(`[BO API] Errore chiamata booking-details: ${err.message}`);
     return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
   }
 }
 
-// --- SUPABASE: RISPOSTE APPROVATE ---
+// --- SUPABASE: RISPOSTE APPROVATE E CORREZIONI UMANE ---
 
 async function fetchRisposteApprovate() {
   try {
-    const { data, error } = await supabase
+    // Ultime 20 risposte modificate da Stefania: contengono il feedback implicito
+    const { data: corrette, error: e1 } = await supabase
       .from('reviews')
-      .select('testo, review_analysis(risposta_generata)')
-      .in('stato', ['published', 'approved'])
-      .order('id', { ascending: false })
-      .limit(10);
+      .select('testo, risposta_pubblicata, review_analysis(risposta_generata, topic)')
+      .eq('stato', 'published')
+      .eq('risposta_modificata', true)
+      .order('pubblicata_at', { ascending: false })
+      .limit(20);
 
-    if (error || !data?.length) return [];
-
-    return data
+    const correzioni = (e1 || !corrette?.length) ? [] : corrette
       .map((r) => ({
         recensione: r.testo,
-        risposta: r.review_analysis?.[0]?.risposta_generata,
+        topic: r.review_analysis?.[0]?.topic ?? [],
+        risposta_ai: r.review_analysis?.[0]?.risposta_generata,
+        risposta_corretta: r.risposta_pubblicata,
       }))
-      .filter((r) => r.recensione && r.risposta);
+      .filter((r) => r.recensione && r.risposta_ai && r.risposta_corretta && r.risposta_ai !== r.risposta_corretta);
+
+    return { correzioni };
   } catch (err) {
     console.warn('[fetchRisposteApprovate] errore:', err.message);
-    return [];
+    return { correzioni: [] };
   }
+}
+
+function buildCorrezioniPrompt(correzioni) {
+  if (!correzioni?.length) return '';
+  return (
+    '\n\n## ESEMPI DI CORREZIONI UMANE\n' +
+    'Stefania ha modificato queste risposte AI per migliorarle. Impara dal pattern:\n\n' +
+    correzioni
+      .map((c, i) => {
+        const topicStr = Array.isArray(c.topic) && c.topic.length ? `Topic: ${c.topic.join(', ')}\n` : '';
+        return `ESEMPIO ${i + 1}:\nRecensione: ${c.recensione}\n${topicStr}Risposta AI iniziale: ${c.risposta_ai}\nRisposta corretta: ${c.risposta_corretta}`;
+      })
+      .join('\n\n')
+  );
 }
 
 // --- ANALISI RECENSIONE ---
 
-async function analizzaRecensione(testo) {
+async function analizzaRecensione(testo, correzioni = []) {
+  const systemPrompt = SYSTEM_PROMPT_ANALISI + buildCorrezioniPrompt(correzioni);
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-5',
     max_tokens: 512,
-    system: SYSTEM_PROMPT_ANALISI,
+    system: systemPrompt,
     messages: [{ role: 'user', content: `Analizza questa recensione:\n\n"${testo}"` }],
   });
 
@@ -294,7 +338,7 @@ async function analizzaRecensione(testo) {
 
 // --- GENERAZIONE RISPOSTA ---
 
-async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
+async function generaRisposta(testo, autore, analisi, datiBO, correzioni = []) {
   const { topic, parole_chiave, flag_referral, recensione_sul_parcheggio } = analisi;
   const { segmento, prima_prenotazione, cross } = datiBO;
   const nome = autore?.split(' ')[0] || autore || 'Cliente';
@@ -313,23 +357,16 @@ async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
     .filter(Boolean)
     .join('\n');
 
-  let fewShot = '';
-  if (esempiApprovati.length > 0) {
-    fewShot =
-      '\n\n### ESEMPI DI RISPOSTE APPROVATE IN PASSATO (usa per calibrare stile e tono)\n' +
-      esempiApprovati
-        .map((e) => `RECENSIONE: ${e.recensione}\nRISPOSTA APPROVATA: ${e.risposta}`)
-        .join('\n\n');
-  }
+  const systemPrompt = SYSTEM_PROMPT_RISPOSTA + buildCorrezioniPrompt(correzioni);
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-5',
     max_tokens: 512,
-    system: SYSTEM_PROMPT_RISPOSTA,
+    system: systemPrompt,
     messages: [
       {
         role: 'user',
-        content: `Genera la risposta per questa recensione.\n\n${contesto}${fewShot}`,
+        content: `Genera la risposta per questa recensione.\n\n${contesto}`,
       },
     ],
   });
@@ -341,12 +378,12 @@ async function generaRisposta(testo, autore, analisi, datiBO, esempiApprovati) {
 // --- ENTRY POINT ---
 
 async function processaRecensione(trustpilot_id, testo, autore = '', metadata = {}) {
-  const [analisi, datiBO, esempiApprovati] = await Promise.all([
-    analizzaRecensione(testo),
+  const [datiBO, { correzioni }] = await Promise.all([
     fetchBackofficeData(trustpilot_id, metadata),
     fetchRisposteApprovate(),
   ]);
 
+  const analisi = await analizzaRecensione(testo, correzioni);
   const topicFiltrati = (analisi.topic || []).filter((t) => TOPICS_VALIDI.includes(t));
 
   const { risposta, tipo_risposta } = await generaRisposta(
@@ -354,7 +391,7 @@ async function processaRecensione(trustpilot_id, testo, autore = '', metadata = 
     autore,
     { ...analisi, topic: topicFiltrati },
     datiBO,
-    esempiApprovati
+    correzioni
   );
 
   return {

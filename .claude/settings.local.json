@@ -6,11 +6,14 @@
       "Bash(node *)",
       "Bash(curl -s http://localhost:3001/stats)",
       "Bash(kill %1)",
-      "Bash(node_modules/.bin/vite build *)"
+      "Bash(node_modules/.bin/vite build *)",
+      "Bash(curl -s -X POST https://bvdiqxyubexrfubbkjtq.supabase.co/rest/v1/rpc/exec_sql -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2ZGlxeHl1YmV4cmZ1YmJranRxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjY4MTI0MywiZXhwIjoyMDkyMjU3MjQzfQ.jgEAWDAbu5WaExtyclV29bN9OLlqe8WFd96vGxzG4w8' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ2ZGlxeHl1YmV4cmZ1YmJranRxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjY4MTI0MywiZXhwIjoyMDkyMjU3MjQzfQ.jgEAWDAbu5WaExtyclV29bN9OLlqe8WFd96vGxzG4w8' -H 'Content-Type: application/json' -d '{\"query\":\"ALTER TABLE reviews ADD COLUMN IF NOT EXISTS risposta_pubblicata TEXT; ALTER TABLE reviews ADD COLUMN IF NOT EXISTS risposta_modificata BOOLEAN DEFAULT FALSE; ALTER TABLE reviews ADD COLUMN IF NOT EXISTS pubblicata_at TIMESTAMPTZ;\"}')",
+      "Bash(claude mcp *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('mcpServers',{}\\), indent=2\\)\\)\")"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
