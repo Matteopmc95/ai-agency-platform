@@ -317,13 +317,7 @@ app.get('/reviews', async (req, res) => {
 
   let query = supabase
     .from('reviews')
-    .select(`
-      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
-      review_analysis (
-        topic, segmento, prima_prenotazione, cross, localita,
-        risposta_generata, flag_referral, flag_cross, created_at
-      )
-    `)
+    .select('*, review_analysis(*)')
     .gte('stelle', parseInt(stelle_min))
     .lte('stelle', parseInt(stelle_max))
     .order('data', { ascending })
@@ -350,7 +344,7 @@ app.get('/reviews', async (req, res) => {
     limit: lim,
     offset: off,
     recensioni: (recensioni || []).map((r) => {
-      const a = r.review_analysis?.[0] || {};
+      const a = (r.review_analysis || []).sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {};
       return {
         id: r.id,
         trustpilot_id: r.trustpilot_id,
@@ -362,15 +356,19 @@ app.get('/reviews', async (req, res) => {
         stelle: r.stelle,
         stato: r.stato,
         source: r.source || 'trustpilot',
+        risposta_pubblicata: r.risposta_pubblicata || null,
+        risposta_modificata: Boolean(r.risposta_modificata),
+        pubblicata_at: r.pubblicata_at || null,
+        analisi_at: r.analisi_at || null,
         topic: a.topic || [],
         segmento: a.segmento || null,
         prima_prenotazione: Boolean(a.prima_prenotazione),
-        cross: Boolean(a.cross),
+        cross: Boolean(a['cross']),
         localita: a.localita || null,
         risposta_generata: a.risposta_generata || null,
         flag_referral: Boolean(a.flag_referral),
         flag_cross: Boolean(a.flag_cross),
-        analisi_at: a.created_at || null,
+        tipo_risposta: a.tipo_risposta || null,
       };
     }),
   });
@@ -383,20 +381,14 @@ app.get('/reviews/:id', async (req, res) => {
 
   const { data: r, error } = await supabase
     .from('reviews')
-    .select(`
-      id, trustpilot_id, reference_id, booking_date, testo, autore, data, stelle, stato, source,
-      review_analysis (
-        topic, segmento, prima_prenotazione, cross, localita,
-        risposta_generata, flag_referral, flag_cross, created_at
-      )
-    `)
+    .select('*, review_analysis(*)')
     .eq('id', review_id)
     .maybeSingle();
 
   if (error) return res.status(500).json({ errore: error.message });
   if (!r) return res.status(404).json({ errore: 'Non trovata' });
 
-  const a = r.review_analysis?.[0] || {};
+  const a = (r.review_analysis || []).sort((x, y) => new Date(y.created_at) - new Date(x.created_at))[0] || {};
   res.json({
     id: r.id,
     trustpilot_id: r.trustpilot_id,
@@ -408,15 +400,19 @@ app.get('/reviews/:id', async (req, res) => {
     stelle: r.stelle,
     stato: r.stato,
     source: r.source || 'trustpilot',
+    risposta_pubblicata: r.risposta_pubblicata || null,
+    risposta_modificata: Boolean(r.risposta_modificata),
+    pubblicata_at: r.pubblicata_at || null,
+    analisi_at: r.analisi_at || null,
     topic: a.topic || [],
     segmento: a.segmento || null,
     prima_prenotazione: Boolean(a.prima_prenotazione),
-    cross: Boolean(a.cross),
+    cross: Boolean(a['cross']),
     localita: a.localita || null,
     risposta_generata: a.risposta_generata || null,
     flag_referral: Boolean(a.flag_referral),
     flag_cross: Boolean(a.flag_cross),
-    analisi_at: a.created_at || null,
+    tipo_risposta: a.tipo_risposta || null,
   });
 });
 
