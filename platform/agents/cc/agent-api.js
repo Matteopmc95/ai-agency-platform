@@ -538,20 +538,22 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
 // POST /reviews/regenerate-pending
 // Avvia in background l'analisi AI per tutte le recensioni pending senza risposta generata.
 app.post('/reviews/regenerate-pending', async (_req, res) => {
-  const { data: pending, error } = await supabase
+  const { data: reviews, error } = await supabase
     .from('reviews')
-    .select('id, trustpilot_id, testo, autore, data, reference_id')
+    .select('id, trustpilot_id, testo, autore, data, reference_id, review_analysis(risposta_generata)')
     .eq('stato', 'pending')
-    .not('id', 'in',
-      supabase.from('review_analysis').select('review_id').not('risposta_generata', 'is', null)
-    )
     .range(0, 9999);
 
   if (error) {
     return res.status(500).json({ errore: 'Errore lettura DB', dettaglio: error.message });
   }
 
-  const totale = pending?.length ?? 0;
+  const pending = (reviews || []).filter(r => {
+    const a = Array.isArray(r.review_analysis) ? r.review_analysis[0] : r.review_analysis;
+    return !a || !a.risposta_generata;
+  });
+
+  const totale = pending.length;
   res.status(202).json({ ok: true, totale });
 
   setImmediate(async () => {
