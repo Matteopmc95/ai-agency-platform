@@ -946,7 +946,7 @@ app.post('/admin/import-playstore-bulk', async (_req, res) => {
 });
 
 // GET /admin/import-playstore-bulk/status
-app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
+app.get('/admin/import-playstore-bulk/status', (_req, res) => {
   res.json({
     jobId:     psJobState.jobId,
     status:    psJobState.status,
