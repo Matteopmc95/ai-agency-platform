@@ -848,7 +848,7 @@ const psJobState = {
 };
 
 // POST /admin/import-playstore-bulk
-app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
+app.post('/admin/import-playstore-bulk', async (_req, res) => {
   if (psJobState.status === 'running') {
     return res.status(409).json({
       errore: 'Job già in esecuzione',
