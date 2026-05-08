@@ -29,7 +29,7 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
     return response.data.reviews || [];
   }
 
-  async function pollPlayStoreReviews(supabase, logFn) {
+  async function pollPlayStoreReviews(supabase, logFn, processaRecensioneFn) {
     try {
       const reviews = await fetchReviews();
       let nuove = 0;
@@ -54,9 +54,11 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
 
         if (esistente) continue;
 
-        const { error } = await supabase
+        const { data: inserted, error } = await supabase
           .from('reviews')
-          .insert({ trustpilot_id: reviewId, testo, autore, data, stelle, stato: 'pending', source: 'playstore' });
+          .insert({ trustpilot_id: reviewId, testo, autore, data, stelle, stato: 'pending', source: 'playstore' })
+          .select('id')
+          .single();
 
         if (error) {
           await logFn('play-store-poller', 'insert_errore', { reviewId, errore: error.message });
@@ -64,6 +66,32 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
         }
 
         nuove++;
+
+        if (processaRecensioneFn) {
+          const review_id = inserted.id;
+          setImmediate(async () => {
+            try {
+              const analisi = await processaRecensioneFn(reviewId, testo, autore, { data });
+              if (analisi.booking_date) {
+                await supabase.from('reviews').update({ booking_date: analisi.booking_date }).eq('id', review_id);
+              }
+              await supabase.from('review_analysis').insert({
+                review_id,
+                topic: analisi.topic,
+                segmento: analisi.segmento,
+                prima_prenotazione: Boolean(analisi.prima_prenotazione),
+                cross: Boolean(analisi.cross),
+                localita: analisi.localita,
+                risposta_generata: analisi.risposta_generata,
+                flag_referral: Boolean(analisi.flag_referral),
+                flag_cross: Boolean(analisi.flag_cross),
+              });
+              await logFn('play-store-poller', 'analisi_completata', { review_id, tipo_risposta: analisi.tipo_risposta });
+            } catch (err) {
+              await logFn('play-store-poller', 'analisi_errore', { review_id, errore: err.message });
+            }
+          });
+        }
       }
 
       await logFn('play-store-poller', 'poll_completato', { nuove, totale_fetched: reviews.length });
@@ -82,9 +110,9 @@ if (!process.env.GOOGLE_SERVICE_ACCOUNT_BASE64) {
     });
   }
 
-  function avviaPollingPlayStore(supabase, logFn) {
-    pollPlayStoreReviews(supabase, logFn);
-    return setInterval(() => pollPlayStoreReviews(supabase, logFn), POLL_INTERVAL_MS);
+  function avviaPollingPlayStore(supabase, logFn, processaRecensioneFn) {
+    pollPlayStoreReviews(supabase, logFn, processaRecensioneFn);
+    return setInterval(() => pollPlayStoreReviews(supabase, logFn, processaRecensioneFn), POLL_INTERVAL_MS);
   }
 
   module.exports = { avviaPollingPlayStore, rispondiPlayStore };
