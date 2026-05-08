@@ -202,7 +202,7 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
   const endDate = new Date(reviewDate);
   endDate.setDate(endDate.getDate() + 15);
 
-  console.log(`[bo] range: start=${toISODate(startDate)}, end=${toISODate(endDate)}, booking_id=${referenceId}`);
+  console.log(`[bo] range: start=${toISODate(startDate)}, end=${toISODate(endDate)}, transaction_id=${referenceId}`);
 
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
 
@@ -220,33 +220,30 @@ async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer
     });
 
     const rows = parseCSV(response.data);
-    const bookingId = String(referenceId).trim();
-    const bookingRow = rows.find(r => String(r.booking_id ?? '').trim() === bookingId);
+    const transactionId = String(referenceId).trim();
+    const bookingRow = rows.find(r => String(r.transaction_id ?? '').trim() === transactionId);
 
-    console.log(`[bo] cerco booking_id=${bookingId}, trovato=${!!bookingRow}, parking_type=${bookingRow?.parking_type ?? 'n/a'}`);
+    console.log(`[bo] cerco transaction_id=${transactionId}, trovato=${!!bookingRow}, parking_type=${bookingRow?.parking_type ?? 'n/a'}`);
 
     if (!bookingRow) {
       return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
     }
 
-    // Cerca altre prenotazioni dello stesso utente per calcolare cross (segmenti diversi)
-    const userEmail = bookingRow.user_email?.trim().toLowerCase();
-    const userRows = userEmail
-      ? rows.filter(r => r.user_email?.trim().toLowerCase() === userEmail)
-      : [bookingRow];
-
-    const segmentiUnici = [...new Set(userRows.map(r => r.parking_type).filter(Boolean))];
-
-    const bookingDate = normalizeDateOnly(bookingRow.booking_date);
+    const bookingDate = normalizeDateOnly(bookingRow.booking_start);
     const firstBookingDate = normalizeDateOnly(bookingRow.user_first_booking_date);
 
-    // prima_prenotazione = true se la prima prenotazione dell'utente coincide con quella corrente
+    // prima_prenotazione = true se booking_start coincide con user_first_booking_date
     const primaPrenotazione = !!(bookingDate && firstBookingDate && firstBookingDate === bookingDate);
 
+    // cross = true se il primo segmento dell'utente è diverso dal segmento corrente
+    const firstParkingType = bookingRow.user_first_booking_parking_type?.trim() || null;
+    const currentParkingType = bookingRow.parking_type?.trim() || null;
+    const cross = !!(firstParkingType && currentParkingType && firstParkingType !== currentParkingType);
+
     return {
-      segmento: bookingRow.parking_type || null,
+      segmento: currentParkingType || null,
       prima_prenotazione: primaPrenotazione,
-      cross: segmentiUnici.length > 1,
+      cross,
       localita: bookingRow.location_name || null,
       booking_date: bookingDate,
     };
