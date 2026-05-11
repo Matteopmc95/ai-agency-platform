@@ -485,6 +485,63 @@ app.get('/reviews/:id', async (req, res) => {
   });
 });
 
+// --- ADMIN: GMB OAUTH ---
+
+// GET /admin/gmb/connect — genera la URL di consenso Google
+app.get('/admin/gmb/connect', authMiddleware, (_req, res) => {
+  const { google } = require('googleapis');
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GMB_CLIENT_ID,
+    process.env.GMB_CLIENT_SECRET,
+    process.env.GMB_REDIRECT_URI
+  );
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',           // forza restituzione refresh_token
+    scope: ['https://www.googleapis.com/auth/business.manage'],
+  });
+  res.json({ authUrl });
+});
+
+// GET /admin/gmb/oauth-callback — riceve il code da Google, scambia con tokens, logga refresh_token
+app.get('/admin/gmb/oauth-callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) {
+    return res.status(400).send(`<h2>Errore OAuth: ${error}</h2>`);
+  }
+  if (!code) {
+    return res.status(400).send('<h2>Nessun code ricevuto da Google</h2>');
+  }
+  try {
+    const { google } = require('googleapis');
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GMB_CLIENT_ID,
+      process.env.GMB_CLIENT_SECRET,
+      process.env.GMB_REDIRECT_URI
+    );
+    const { tokens } = await oauth2Client.getToken(code);
+    const refreshToken = tokens.refresh_token;
+
+    console.log('==================================================');
+    console.log('[GMB OAuth] Token ottenuto con successo!');
+    console.log('[GMB OAuth] GMB_REFRESH_TOKEN =', refreshToken);
+    console.log('==================================================');
+
+    await log('agent-api', 'gmb_oauth_success', { hasRefreshToken: Boolean(refreshToken) });
+
+    res.send(`
+      <h2>✅ Autenticazione GMB completata</h2>
+      <p>Il refresh token è stato salvato nei log Railway.</p>
+      <p>Copia questo valore e aggiungilo come variabile d'ambiente <strong>GMB_REFRESH_TOKEN</strong> su Railway:</p>
+      <pre style="background:#f0f0f0;padding:16px;word-break:break-all">${refreshToken || '(nessun refresh token — riprova il login)'}</pre>
+      <p><small>Puoi chiudere questa finestra.</small></p>
+    `);
+  } catch (err) {
+    console.error('[GMB OAuth] Errore scambio token:', err.message);
+    res.status(500).send(`<h2>Errore scambio token</h2><pre>${err.message}</pre>`);
+  }
+});
+
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
 app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
