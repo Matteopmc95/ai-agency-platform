@@ -542,23 +542,6 @@ app.get('/admin/gmb/oauth-callback', async (req, res) => {
   }
 });
 
-// TEMP: debug GMB env
-app.get('/admin/gmb/debug-env', async (_req, res) => {
-  const id  = process.env.GMB_CLIENT_ID    || '';
-  const sec = process.env.GMB_CLIENT_SECRET || '';
-  const uri = process.env.GMB_REDIRECT_URI  || '';
-  res.json({
-    clientIdPresent:      id.length > 0,
-    clientIdFirst10:      id.slice(0, 10),
-    clientIdLength:       id.length,
-    clientSecretPresent:  sec.length > 0,
-    clientSecretFirst10:  sec.slice(0, 10),
-    clientSecretLength:   sec.length,
-    redirectUri:          uri,
-    redirectUriLength:    uri.length,
-  });
-});
-
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
 app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
