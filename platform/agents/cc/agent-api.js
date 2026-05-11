@@ -1173,7 +1173,7 @@ app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
 // --- ADMIN: GMB ---
 
 // GET /admin/gmb/locations
-app.get('/admin/gmb/locations', authMiddleware, async (_req, res) => {
+app.get('/admin/gmb/locations', async (_req, res) => {
   try {
     const locs = await fetchGMBLocations();
     // Prova a salvare in gmb_locations (non bloccante se la tabella non esiste)
@@ -1196,7 +1196,7 @@ const gmbJobState = {
   aiOk: 0, lowStars: 0, errors: 0,
 };
 
-app.post('/admin/gmb/import-bulk', authMiddleware, async (_req, res) => {
+app.post('/admin/gmb/import-bulk', async (_req, res) => {
   if (gmbJobState.status === 'running') {
     return res.status(409).json({ errore: 'Job già in esecuzione', ...gmbJobState });
   }
@@ -1274,7 +1274,7 @@ app.post('/admin/gmb/import-bulk', authMiddleware, async (_req, res) => {
   });
 });
 
-app.get('/admin/gmb/import-bulk/status', authMiddleware, (_req, res) => {
+app.get('/admin/gmb/import-bulk/status', (_req, res) => {
   res.json(gmbJobState);
 });
 
