@@ -224,14 +224,26 @@ async function getGMBToken() {
   return token;
 }
 
-async function gmbGet(url, params = {}) {
+async function gmbGet(url, params = {}, retries = 3) {
   const token = await getGMBToken();
-  const { data } = await axios.get(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    params,
-    timeout: 15_000,
-  });
-  return data;
+  for (let t = 1; t <= retries; t++) {
+    try {
+      const { data } = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+        timeout: 15_000,
+      });
+      return data;
+    } catch (err) {
+      if (err.response?.status === 429 && t < retries) {
+        const wait = t * 30_000;
+        console.warn(`[GMB] 429 su ${url.split('/').pop()} — attendo ${wait / 1000}s (tentativo ${t}/${retries})`);
+        await new Promise(r => setTimeout(r, wait));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 async function fetchGMBLocations() {
@@ -1486,9 +1498,12 @@ app.listen(PORT, () => {
   avviaPollingPlayStore(supabase, log, processaRecensione, salvaAnalisi);
   avviaPollingApple(supabase, log);
   if (process.env.GMB_REFRESH_TOKEN) {
-    pollGMBReviews();
-    setInterval(pollGMBReviews, GMB_POLL_INTERVAL_MS);
-    console.log('[GMB] Poller avviato (ogni 30 min)');
+    // Ritarda il primo poll di 5 min per non collidere con il startup
+    setTimeout(() => {
+      pollGMBReviews();
+      setInterval(pollGMBReviews, GMB_POLL_INTERVAL_MS);
+    }, 5 * 60 * 1000);
+    console.log('[GMB] Poller schedulato (primo poll tra 5 min, poi ogni 30 min)');
   }
 });
 
