@@ -202,6 +202,151 @@ async function salvaAnalisi(review_id, analisi) {
   await log('agent-api', 'analisi_salvata', { review_id, tipo_risposta: analisi.tipo_risposta });
 }
 
+// --- GMB HELPERS ---
+
+const GMB_STAR_MAP = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+const GMB_CUTOFF_MS = new Date('2026-05-04T00:00:00Z').getTime();
+const GMB_POLL_INTERVAL_MS = 30 * 60 * 1000;
+
+let _gmbTokenCache = null;
+
+async function getGMBToken() {
+  if (_gmbTokenCache && _gmbTokenCache.exp > Date.now() + 60_000) return _gmbTokenCache.token;
+  const { google } = require('googleapis');
+  const oauth2 = new google.auth.OAuth2(
+    process.env.GMB_CLIENT_ID,
+    process.env.GMB_CLIENT_SECRET,
+    process.env.GMB_REDIRECT_URI
+  );
+  oauth2.setCredentials({ refresh_token: process.env.GMB_REFRESH_TOKEN });
+  const { token, res: tokenRes } = await oauth2.getAccessToken();
+  _gmbTokenCache = { token, exp: Date.now() + ((tokenRes?.data?.expires_in ?? 3600) - 60) * 1000 };
+  return token;
+}
+
+async function gmbGet(url, params = {}) {
+  const token = await getGMBToken();
+  const { data } = await axios.get(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    params,
+    timeout: 15_000,
+  });
+  return data;
+}
+
+async function fetchGMBLocations() {
+  const accData = await gmbGet('https://mybusinessaccountmanagement.googleapis.com/v1/accounts');
+  const accounts = accData.accounts || [];
+  const locs = [];
+  for (const acc of accounts) {
+    let pageToken;
+    do {
+      const params = { readMask: 'name,title,storefrontAddress', pageSize: 100 };
+      if (pageToken) params.pageToken = pageToken;
+      const locData = await gmbGet(
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${acc.name}/locations`,
+        params
+      );
+      for (const loc of (locData.locations || [])) {
+        locs.push({
+          accountName: acc.name,
+          locationName: loc.name,
+          fullPath: `${acc.name}/${loc.name}`,
+          displayName: loc.title,
+          address: loc.storefrontAddress?.addressLines?.join(', ') || null,
+        });
+      }
+      pageToken = locData.nextPageToken;
+    } while (pageToken);
+  }
+  return locs;
+}
+
+async function fetchGMBReviewsSince(fullPath, sinceMs) {
+  const all = [];
+  let pageToken;
+  do {
+    const params = { pageSize: 50 };
+    if (pageToken) params.pageToken = pageToken;
+    const data = await gmbGet(`https://mybusiness.googleapis.com/v4/${fullPath}/reviews`, params);
+    const reviews = data.reviews || [];
+    let earlyExit = false;
+    for (const r of reviews) {
+      const updateMs = new Date(r.updateTime || r.createTime).getTime();
+      const createMs = new Date(r.createTime).getTime();
+      if (updateMs < sinceMs) { earlyExit = true; break; }
+      if (createMs >= sinceMs) all.push(r);
+    }
+    pageToken = data.nextPageToken;
+    if (earlyExit || !reviews.length) break;
+  } while (pageToken);
+  return all;
+}
+
+function gmbReviewToRow(r, locationDisplayName) {
+  return {
+    trustpilot_id: r.name,
+    testo: r.comment || '',
+    autore: r.reviewer?.isAnonymous ? 'Anonimo' : (r.reviewer?.displayName || 'Anonimo'),
+    data: r.createTime,
+    stelle: GMB_STAR_MAP[r.starRating] || null,
+    stato: 'pending',
+    source: 'gmb',
+    reference_id: locationDisplayName || null,
+  };
+}
+
+async function pubblicaRispostaGMB(reviewName, testo) {
+  const token = await getGMBToken();
+  await axios.put(
+    `https://mybusiness.googleapis.com/v4/${reviewName}/reply`,
+    { comment: testo },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 15_000 }
+  );
+}
+
+async function pollGMBReviews() {
+  try {
+    const locs = await fetchGMBLocations();
+    let nuove = 0;
+    for (const loc of locs) {
+      const { data: lastR } = await supabase
+        .from('reviews')
+        .select('data')
+        .eq('source', 'gmb')
+        .like('trustpilot_id', `${loc.fullPath}/reviews/%`)
+        .order('data', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const sinceMs = lastR ? new Date(lastR.data).getTime() + 1 : GMB_CUTOFF_MS;
+      const reviews = await fetchGMBReviewsSince(loc.fullPath, sinceMs);
+      for (const r of reviews) {
+        const stelle = GMB_STAR_MAP[r.starRating] || 0;
+        const row = gmbReviewToRow(r, loc.displayName);
+        const { data: ins, error } = await supabase.from('reviews').insert(row).select('id').single();
+        if (error) { await log('agent-api', 'gmb_poll_insert_errore', { errore: error.message }); continue; }
+        nuove++;
+        if (stelle >= 4) {
+          const review_id = ins.id;
+          setImmediate(async () => {
+            try {
+              const analisi = await processaRecensione(r.name, row.testo, row.autore, { data: row.data });
+              await salvaAnalisi(review_id, analisi);
+              await log('agent-api', 'gmb_analisi_completata', { review_id });
+            } catch (err) {
+              await log('agent-api', 'gmb_analisi_errore', { review_id, errore: err.message });
+            }
+          });
+        }
+      }
+    }
+    await log('agent-api', 'gmb_poll_completato', { nuove, location_count: locs.length });
+  } catch (err) {
+    await log('agent-api', 'gmb_poll_errore', { errore: err.message });
+    console.error('[GMB poller] errore:', err.message);
+  }
+}
+
 // --- WEBHOOK TRUSTPILOT ---
 // POST /webhook/trustpilot
 // Riceve nuove recensioni da Trustpilot (webhook configurato nel portale TP)
@@ -342,7 +487,11 @@ app.post('/reviews/:id/approve', async (req, res) => {
   const risposta_modificata = !!(risposta_custom && risposta_generata && risposta_custom !== risposta_generata);
 
   try {
-    await pubblicaRispostaTrustpilot(review.trustpilot_id, testo_risposta);
+    if (review.source === 'gmb') {
+      await pubblicaRispostaGMB(review.trustpilot_id, testo_risposta);
+    } else {
+      await pubblicaRispostaTrustpilot(review.trustpilot_id, testo_risposta);
+    }
 
     await supabase.from('reviews').update({
       stato: 'published',
@@ -351,12 +500,12 @@ app.post('/reviews/:id/approve', async (req, res) => {
       pubblicata_at: new Date().toISOString(),
     }).eq('id', review_id);
 
-    await log('agent-api', 'reply_pubblicata', { review_id, trustpilot_id: review.trustpilot_id, risposta_modificata });
+    await log('agent-api', 'reply_pubblicata', { review_id, source: review.source, risposta_modificata });
 
     res.json({ ok: true, review_id, trustpilot_id: review.trustpilot_id, risposta_pubblicata: testo_risposta });
   } catch (err) {
     await log('agent-api', 'publish_errore', { review_id, errore: err.message });
-    res.status(502).json({ errore: 'Errore pubblicazione Trustpilot', dettaglio: err.message });
+    res.status(502).json({ errore: `Errore pubblicazione ${review.source}`, dettaglio: err.message });
   }
 });
 
@@ -1021,6 +1170,114 @@ app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
   });
 });
 
+// --- ADMIN: GMB ---
+
+// GET /admin/gmb/locations
+app.get('/admin/gmb/locations', authMiddleware, async (_req, res) => {
+  try {
+    const locs = await fetchGMBLocations();
+    // Prova a salvare in gmb_locations (non bloccante se la tabella non esiste)
+    const { error: upsertErr } = await supabase.from('gmb_locations').upsert(
+      locs.map(l => ({ account_id: l.accountName, location_id: l.locationName, full_path: l.fullPath, location_name: l.displayName, address: l.address })),
+      { onConflict: 'location_id' }
+    );
+    if (upsertErr) console.warn('[GMB] gmb_locations upsert:', upsertErr.message);
+    res.json({ total: locs.length, locations: locs });
+  } catch (err) {
+    res.status(500).json({ errore: err.message });
+  }
+});
+
+// POST /admin/gmb/import-bulk + GET /admin/gmb/import-bulk/status
+
+const gmbJobState = {
+  status: 'idle', jobId: null, startedAt: null,
+  locations: 0, total: 0, inserted: 0, skipped: 0,
+  aiOk: 0, lowStars: 0, errors: 0,
+};
+
+app.post('/admin/gmb/import-bulk', authMiddleware, async (_req, res) => {
+  if (gmbJobState.status === 'running') {
+    return res.status(409).json({ errore: 'Job già in esecuzione', ...gmbJobState });
+  }
+  const jobId = Date.now().toString(36);
+  Object.assign(gmbJobState, {
+    status: 'running', jobId, startedAt: new Date().toISOString(),
+    locations: 0, total: 0, inserted: 0, skipped: 0, aiOk: 0, lowStars: 0, errors: 0,
+  });
+  res.json({ jobId, status: 'started' });
+
+  setImmediate(async () => {
+    try {
+      const locs = await fetchGMBLocations();
+      gmbJobState.locations = locs.length;
+      console.log(`[GMB BULK] ${locs.length} location trovate`);
+
+      for (const loc of locs) {
+        let reviews;
+        try {
+          reviews = await fetchGMBReviewsSince(loc.fullPath, GMB_CUTOFF_MS);
+          gmbJobState.total += reviews.length;
+        } catch (err) {
+          console.error(`[GMB BULK] fetch ${loc.displayName}: ${err.message}`);
+          gmbJobState.errors++;
+          continue;
+        }
+
+        for (const r of reviews) {
+          const stelle = GMB_STAR_MAP[r.starRating] || 0;
+          const row = gmbReviewToRow(r, loc.displayName);
+
+          const { data: esistente } = await supabase
+            .from('reviews').select('id').eq('trustpilot_id', r.name).maybeSingle();
+          if (esistente) { gmbJobState.skipped++; continue; }
+
+          const { data: ins, error: insErr } = await supabase
+            .from('reviews').insert(row).select('id').single();
+          if (insErr) {
+            console.error(`[GMB BULK] insert ${r.name}: ${insErr.message}`);
+            gmbJobState.errors++;
+            continue;
+          }
+          gmbJobState.inserted++;
+
+          if (stelle >= 4) {
+            let analisi = null;
+            for (let t = 1; t <= 3; t++) {
+              try {
+                analisi = await processaRecensione(r.name, row.testo, row.autore, { data: row.data });
+                break;
+              } catch (err) {
+                const is429 = err.message?.includes('429') || err.message?.includes('overload');
+                if (is429 && t < 3) { await new Promise(resolve => setTimeout(resolve, 30_000)); }
+                else { gmbJobState.errors++; break; }
+              }
+            }
+            if (analisi) {
+              try { await salvaAnalisi(ins.id, analisi); gmbJobState.aiOk++; }
+              catch (err) { gmbJobState.errors++; }
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+          } else {
+            gmbJobState.lowStars++;
+          }
+        }
+      }
+
+      gmbJobState.status = 'done';
+      console.log(`[GMB BULK] Completato: ${gmbJobState.inserted} inserite, ${gmbJobState.aiOk} AI, ${gmbJobState.lowStars} low-star, ${gmbJobState.skipped} skip, ${gmbJobState.errors} errori`);
+      await log('agent-api', 'gmb_bulk_completato', { inserted: gmbJobState.inserted, aiOk: gmbJobState.aiOk, errors: gmbJobState.errors });
+    } catch (err) {
+      gmbJobState.status = 'error';
+      console.error('[GMB BULK] errore fatale:', err.message);
+    }
+  });
+});
+
+app.get('/admin/gmb/import-bulk/status', authMiddleware, (_req, res) => {
+  res.json(gmbJobState);
+});
+
 // --- LOGS ---
 // GET /logs?agent=&limit=&offset=
 app.get('/logs', async (req, res) => {
@@ -1228,6 +1485,11 @@ app.listen(PORT, () => {
   console.log(`CC Agent API running on port ${PORT}`);
   avviaPollingPlayStore(supabase, log, processaRecensione, salvaAnalisi);
   avviaPollingApple(supabase, log);
+  if (process.env.GMB_REFRESH_TOKEN) {
+    pollGMBReviews();
+    setInterval(pollGMBReviews, GMB_POLL_INTERVAL_MS);
+    console.log('[GMB] Poller avviato (ogni 30 min)');
+  }
 });
 
 module.exports = app;
