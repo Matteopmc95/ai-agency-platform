@@ -485,30 +485,6 @@ app.get('/reviews/:id', async (req, res) => {
   });
 });
 
-// TEMP: diagnosi full Play Store — da rimuovere dopo
-app.get('/admin/playstore-full-count', async (_req, res) => {
-  try {
-    const { google } = require('googleapis');
-    const creds = JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8'));
-    const auth  = new google.auth.GoogleAuth({ credentials: creds, scopes: ['https://www.googleapis.com/auth/androidpublisher'] });
-    const ap    = google.androidpublisher({ version: 'v3', auth });
-    let all = [], pageToken;
-    do {
-      const params = { packageName: 'it.parkingmycar.parkingmyapp', maxResults: 100 };
-      if (pageToken) params.token = pageToken;
-      const r = await ap.reviews.list(params);
-      all.push(...(r.data.reviews || []));
-      pageToken = r.data.tokenPagination?.nextPageToken;
-    } while (pageToken);
-    const dates = all.map(r => parseInt(r.comments?.[0]?.userComment?.lastModified?.seconds || 0) * 1000).filter(Boolean).sort((a,b) => a-b);
-    res.json({
-      total: all.length,
-      oldest: dates.length ? new Date(dates[0]).toISOString().slice(0,10) : null,
-      newest: dates.length ? new Date(dates[dates.length-1]).toISOString().slice(0,10) : null,
-    });
-  } catch (err) { res.status(500).json({ errore: err.message }); }
-});
-
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
 app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
