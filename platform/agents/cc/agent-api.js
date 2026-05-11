@@ -844,11 +844,12 @@ const psJobState = {
   inserted: 0,
   skipped: 0,
   aiOk: 0,
+  lowStars: 0,  // inserite 1-3★ senza AI
   errors: 0,
 };
 
 // POST /admin/import-playstore-bulk
-app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
+app.post('/admin/import-playstore-bulk', async (_req, res) => {
   if (psJobState.status === 'running') {
     return res.status(409).json({
       errore: 'Job già in esecuzione',
@@ -861,7 +862,7 @@ app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
   Object.assign(psJobState, {
     status: 'running', jobId,
     startedAt: new Date().toISOString(),
-    total: 0, inserted: 0, skipped: 0, aiOk: 0, errors: 0,
+    total: 0, inserted: 0, skipped: 0, aiOk: 0, lowStars: 0, errors: 0,
   });
 
   res.json({ jobId, status: 'started', cutoff: '2026-05-04', note: 'Chiama /admin/import-playstore-bulk/status per monitorare' });
@@ -907,7 +908,7 @@ app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
       }
       psJobState.inserted++;
 
-      // AI solo per stelle >= 4
+      // AI solo per stelle >= 4; 1-3★ vengono salvate senza risposta
       if (stelle >= 4) {
         let analisi = null;
         for (let t = 1; t <= 3; t++) {
@@ -936,17 +937,20 @@ app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
           }
           await new Promise(r => setTimeout(r, AI_DELAY_PS));
         }
+      } else {
+        psJobState.lowStars++;
+        console.log(`[PS BULK] ${stelle}★ salvata senza AI: ${reviewId}`);
       }
     }
 
     psJobState.status = 'done';
-    console.log(`[PS BULK] Completato: ${psJobState.inserted} inserite, ${psJobState.aiOk} AI ok, ${psJobState.skipped} skip, ${psJobState.errors} errori`);
-    await log('agent-api', 'ps_bulk_completato', { inserted: psJobState.inserted, aiOk: psJobState.aiOk, errors: psJobState.errors });
+    console.log(`[PS BULK] Completato: ${psJobState.inserted} inserite (${psJobState.aiOk} con AI, ${psJobState.lowStars} low-star), ${psJobState.skipped} skip, ${psJobState.errors} errori`);
+    await log('agent-api', 'ps_bulk_completato', { inserted: psJobState.inserted, aiOk: psJobState.aiOk, lowStars: psJobState.lowStars, errors: psJobState.errors });
   });
 });
 
 // GET /admin/import-playstore-bulk/status
-app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
+app.get('/admin/import-playstore-bulk/status', (_req, res) => {
   res.json({
     jobId:     psJobState.jobId,
     status:    psJobState.status,
@@ -955,6 +959,7 @@ app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
     inserted:  psJobState.inserted,
     skipped:   psJobState.skipped,
     aiOk:      psJobState.aiOk,
+    lowStars:  psJobState.lowStars,
     errors:    psJobState.errors,
   });
 });
