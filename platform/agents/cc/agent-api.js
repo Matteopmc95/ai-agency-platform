@@ -849,7 +849,7 @@ const psJobState = {
 };
 
 // POST /admin/import-playstore-bulk
-app.post('/admin/import-playstore-bulk', async (_req, res) => {
+app.post('/admin/import-playstore-bulk', authMiddleware, async (_req, res) => {
   if (psJobState.status === 'running') {
     return res.status(409).json({
       errore: 'Job già in esecuzione',
@@ -950,7 +950,7 @@ app.post('/admin/import-playstore-bulk', async (_req, res) => {
 });
 
 // GET /admin/import-playstore-bulk/status
-app.get('/admin/import-playstore-bulk/status', (_req, res) => {
+app.get('/admin/import-playstore-bulk/status', authMiddleware, (_req, res) => {
   res.json({
     jobId:     psJobState.jobId,
     status:    psJobState.status,
