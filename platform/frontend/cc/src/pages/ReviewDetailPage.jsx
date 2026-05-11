@@ -67,6 +67,7 @@ export default function ReviewDetailPage() {
   const [regenerateLoading, setRegenerateLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
+  const isApple = review?.source === 'apple' || review?.source === 'apple_store';
   const hasGeneratedResponse = Boolean(review?.risposta_generata);
   const canPublish = responseText.trim().length >= 10;
 
@@ -264,6 +265,17 @@ export default function ReviewDetailPage() {
           </div>
         </section>
 
+        {isApple ? (
+          <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+            <p className="text-sm font-medium uppercase tracking-[0.18em] text-neutral-400">Solo monitoraggio</p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Recensione iOS App Store</h2>
+            <div className="mt-5 rounded-[16px] bg-neutral-50 p-5">
+              <p className="text-sm leading-7 text-neutral-600">
+                Apple non consente la pubblicazione di risposte alle recensioni tramite API. Questa recensione è disponibile solo in lettura per il monitoraggio interno.
+              </p>
+            </div>
+          </section>
+        ) : (
         <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
           <p className="text-sm font-medium uppercase tracking-[0.18em] text-brand-600">Risposta</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">
@@ -396,6 +408,7 @@ export default function ReviewDetailPage() {
             )}
           </div>
         </section>
+        )}
       </div>
     </div>
   );

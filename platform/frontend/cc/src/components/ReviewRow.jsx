@@ -20,6 +20,7 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
   const [regenerateLoading, setRegenerateLoading] = useState(false);
   const [actionError, setActionError] = useState('');
 
+  const isApple = review.source === 'apple' || review.source === 'apple_store';
   const hasResponse = Boolean(responseText.trim());
   const canPublish = hasResponse && responseText.trim().length >= 10 && review.stato !== 'published';
   const isLoading = approveLoading || regenerateLoading;
@@ -107,6 +108,11 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
             <Stars value={review.stelle} />
             <SourceBadge source={review.source} />
             <StatusBadge status={review.stato} />
+            {isApple && (
+              <span className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500 ring-1 ring-inset ring-neutral-200">
+                Solo monitoraggio
+              </span>
+            )}
           </div>
         </div>
 
@@ -134,95 +140,97 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
           )}
         </div>
 
-        {/* Risposta AI */}
-        <div className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-400">
-            Risposta AI
-          </p>
-
-          {isEditing ? (
-            <textarea
-              ref={textareaRef}
-              value={draftResponseText}
-              onChange={(e) => setDraftResponseText(e.target.value)}
-              rows={5}
-              className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm leading-6 text-neutral-700 outline-none transition focus:border-brand-400 focus:bg-white"
-            />
-          ) : hasResponse ? (
-            <div>
-              <p className={`text-sm leading-6 text-neutral-700 ${expanded ? '' : 'line-clamp-3'}`}>
-                {responseText}
+        {/* Risposta AI + bottoni — nascosti per Apple (l'API non supporta reply) */}
+        {!isApple && (
+          <>
+            <div className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-400">
+                Risposta AI
               </p>
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                className="mt-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
-              >
-                {expanded ? 'Comprimi' : 'Espandi'}
-              </button>
+
+              {isEditing ? (
+                <textarea
+                  ref={textareaRef}
+                  value={draftResponseText}
+                  onChange={(e) => setDraftResponseText(e.target.value)}
+                  rows={5}
+                  className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm leading-6 text-neutral-700 outline-none transition focus:border-brand-400 focus:bg-white"
+                />
+              ) : hasResponse ? (
+                <div>
+                  <p className={`text-sm leading-6 text-neutral-700 ${expanded ? '' : 'line-clamp-3'}`}>
+                    {responseText}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    className="mt-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
+                  >
+                    {expanded ? 'Comprimi' : 'Espandi'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-sm italic text-neutral-400">Risposta non ancora generata</p>
+              )}
             </div>
-          ) : (
-            <p className="text-sm italic text-neutral-400">Risposta non ancora generata</p>
-          )}
-        </div>
 
-        {/* Bottoni azione */}
-        <div className="flex flex-wrap items-center gap-2">
-          {isEditing ? (
-            <>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                disabled={!draftResponseText.trim()}
-                className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Salva modifiche
-              </button>
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                className="rounded-full bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
-              >
-                Annulla
-              </button>
-            </>
-          ) : (
-            <>
-              {hasResponse && (
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={isLoading || !canPublish}
-                  className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {approveLoading ? 'Pubblicazione…' : 'Pubblica risposta'}
-                </button>
+            <div className="flex flex-wrap items-center gap-2">
+              {isEditing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    disabled={!draftResponseText.trim()}
+                    className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Salva modifiche
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="rounded-full bg-neutral-100 px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-200"
+                  >
+                    Annulla
+                  </button>
+                </>
+              ) : (
+                <>
+                  {hasResponse && (
+                    <button
+                      type="button"
+                      onClick={handleApprove}
+                      disabled={isLoading || !canPublish}
+                      className="rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {approveLoading ? 'Pubblicazione…' : 'Pubblica risposta'}
+                    </button>
+                  )}
+                  {hasResponse && (
+                    <button
+                      type="button"
+                      onClick={handleEdit}
+                      disabled={isLoading}
+                      className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Modifica risposta
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    disabled={isLoading}
+                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {regenerateLoading ? 'Rigenerazione…' : 'Rigenera con AI'}
+                  </button>
+                </>
               )}
-              {hasResponse && (
-                <button
-                  type="button"
-                  onClick={handleEdit}
-                  disabled={isLoading}
-                  className="rounded-full border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Modifica risposta
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleRegenerate}
-                disabled={isLoading}
-                className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {regenerateLoading ? 'Rigenerazione…' : 'Rigenera con AI'}
-              </button>
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* Errore inline */}
-        {actionError && (
-          <p className="text-xs font-medium text-red-600">{actionError}</p>
+            {actionError && (
+              <p className="text-xs font-medium text-red-600">{actionError}</p>
+            )}
+          </>
         )}
 
         {/* Footer: label + Vedi dettaglio */}

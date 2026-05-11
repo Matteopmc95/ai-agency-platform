@@ -871,6 +871,7 @@ app.post('/reviews/regenerate-pending', async (_req, res) => {
     .from('reviews')
     .select('id, trustpilot_id, testo, autore, data, reference_id, review_analysis(risposta_generata)')
     .eq('stato', 'pending')
+    .not('source', 'in', '(apple,apple_store)')   // Apple: no reply via API, skip AI
     .range(0, 9999);
 
   if (error) {
@@ -950,6 +951,7 @@ async function fetchReviewsSenzaAI() {
     const { data, error } = await supabase
       .from('reviews')
       .select('id, trustpilot_id, testo, autore, data, reference_id, source')
+      .not('source', 'in', '(apple,apple_store)')   // Apple: no reply via API, skip AI
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
