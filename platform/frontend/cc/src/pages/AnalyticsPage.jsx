@@ -33,6 +33,8 @@ export default function AnalyticsPage() {
   const [trustpilotTopics, setTrustpilotTopics] = useState(null);
   const [playstoreStats, setPlaystoreStats] = useState(null);
   const [playstoreReviews, setPlaystoreReviews] = useState(null);
+  const [appleStats, setAppleStats] = useState(null);
+  const [appleReviews, setAppleReviews] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -42,17 +44,21 @@ export default function AnalyticsPage() {
         setLoading(true);
         setError('');
 
-        const [trustStatsData, trustTopicsData, androidStatsData, androidReviewsData] = await Promise.all([
+        const [trustStatsData, trustTopicsData, androidStatsData, androidReviewsData, appleStatsData, appleReviewsData] = await Promise.all([
           fetchStats({ period: selectedPeriod, source: 'trustpilot' }),
           fetchTopicsBySegment({ period: selectedPeriod, source: 'trustpilot' }),
           fetchStats({ period: selectedPeriod, source: 'playstore' }),
           fetchReviews({ source: 'playstore', limit: 6, offset: 0 }),
+          fetchStats({ period: selectedPeriod, source: 'apple' }),
+          fetchReviews({ source: 'apple', limit: 6, offset: 0 }),
         ]);
 
         setTrustpilotStats(trustStatsData);
         setTrustpilotTopics(trustTopicsData);
         setPlaystoreStats(androidStatsData);
         setPlaystoreReviews(androidReviewsData);
+        setAppleStats(appleStatsData);
+        setAppleReviews(appleReviewsData);
       } catch (loadError) {
         setError(getErrorMessage(loadError, 'Impossibile caricare i dati, riprova.'));
       } finally {
@@ -76,6 +82,11 @@ export default function AnalyticsPage() {
     color: item.stars >= 4 ? '#65A30D' : item.stars === 3 ? '#F59E0B' : '#2563EB',
   }));
 
+  const appleStars = getStarDistribution(appleStats).map((item) => ({
+    ...item,
+    color: item.stars >= 4 ? '#0EA5E9' : item.stars === 3 ? '#F59E0B' : '#6366F1',
+  }));
+
   return (
     <div className="space-y-6">
       <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
@@ -84,7 +95,7 @@ export default function AnalyticsPage() {
           Andamento recensioni per fonte
         </h1>
         <p className="mt-2 text-sm leading-6 text-neutral-500">
-          Naviga i dati per canale: Trustpilot è già operativo, mentre GMB e iOS sono pronti per la prossima integrazione.
+          Naviga i dati per canale: Trustpilot, iOS App Store e Android Play Store sono operativi. Google My Business è integrato, import in corso.
         </p>
       </section>
 
@@ -119,18 +130,94 @@ export default function AnalyticsPage() {
 
       {activeTab === 'google' ? (
         <PlaceholderPanel
-          title="Integrazione GMB in arrivo"
-          description="Questa sezione ospiterà presto le recensioni Google My Business con vista dedicata per sede, così il team potrà confrontare facilmente andamento, volumi e qualità per singola location."
+          title="Google My Business — import in corso"
+          description="L'integrazione GMB è attiva: il sistema recupera automaticamente le recensioni di tutte le sedi. I dati appariranno qui non appena l'import iniziale sarà completato."
           accentClassName="bg-[linear-gradient(135deg,_#eff6ff_0%,_#ffffff_55%,_#f8fafc_100%)] border-sky-100"
         />
       ) : null}
 
       {activeTab === 'apple' ? (
-        <PlaceholderPanel
-          title="Integrazione iOS in arrivo"
-          description="Qui arriverà il monitoraggio delle recensioni App Store con gli stessi standard della dashboard attuale, pronto per letture rapide su rating, feedback prodotto e trend delle ultime recensioni."
-          accentClassName="bg-[linear-gradient(135deg,_#f5f5f5_0%,_#ffffff_55%,_#fafafa_100%)] border-neutral-200"
-        />
+        <div className="space-y-6">
+          <section className="rounded-[24px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">iOS App Store</p>
+                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Distribuzione stelle</h2>
+                <p className="mt-2 text-sm leading-6 text-neutral-500">
+                  Vista sintetica delle recensioni iOS filtrate per il periodo selezionato.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { value: 'month', label: 'Ultimo mese' },
+                  { value: '3months', label: 'Ultimi 3 mesi' },
+                  { value: 'all', label: 'Tutto' },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setSelectedPeriod(option.value)}
+                    className={[
+                      'rounded-full border px-4 py-2 text-sm font-semibold transition',
+                      selectedPeriod === option.value
+                        ? 'border-sky-700 bg-sky-700 text-white'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800',
+                    ].join(' ')}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="rounded-[18px] border border-sky-100 bg-[linear-gradient(135deg,_#e0f2fe_0%,_#ffffff_100%)] p-5 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Panoramica</p>
+                <p className="mt-3 text-4xl font-semibold text-ink">{appleStats?.total_reviews || 0}</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-600">
+                  Recensioni iOS incluse nel periodo selezionato.
+                </p>
+              </div>
+
+              <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Stelle</p>
+                <h3 className="mt-2 text-lg font-semibold text-ink">Distribuzione da 1 a 5</h3>
+                <div className="mt-5">
+                  <HorizontalBarChart
+                    items={appleStars}
+                    emptyLabel="Nessuna recensione iOS disponibile nel periodo selezionato."
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Recensioni recenti</p>
+                <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Ultime recensioni iOS</h3>
+              </div>
+              <p className="text-sm text-neutral-500">
+                {appleReviews?.totale || 0} recensioni iOS totali
+              </p>
+            </div>
+
+            {appleReviews?.recensioni?.length ? (
+              appleReviews.recensioni.map((review) => (
+                <ReviewRow key={review.id} review={review} compact />
+              ))
+            ) : (
+              <div className="rounded-[16px] border border-dashed border-neutral-200 bg-white px-5 py-12 text-center shadow-sm">
+                <p className="text-base font-semibold text-ink">Nessuna recensione iOS trovata</p>
+                <p className="mt-2 text-sm text-neutral-500">
+                  Prova a cambiare il periodo o verifica che il canale App Store sia attivo.
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
       ) : null}
 
       {activeTab === 'playstore' ? (
