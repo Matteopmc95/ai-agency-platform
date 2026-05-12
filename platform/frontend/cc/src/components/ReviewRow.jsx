@@ -21,6 +21,7 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
   const [actionError, setActionError] = useState('');
 
   const isApple = review.source === 'apple' || review.source === 'apple_store';
+  const reviewAgeMin = (Date.now() - new Date(review.data).getTime()) / 60_000;
   const hasResponse = Boolean(responseText.trim());
   const canPublish = hasResponse && responseText.trim().length >= 10 && review.stato !== 'published';
   const isLoading = approveLoading || regenerateLoading;
@@ -194,13 +195,9 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
                   </button>
                 </div>
               ) : (
-                {/* Review recente (< 15 min) senza risposta: probabilmente AI ancora in corso */}
-                {(() => {
-                  const ageMin = (Date.now() - new Date(review.data).getTime()) / 60_000;
-                  return ageMin < 15
-                    ? <p className="text-sm italic text-neutral-400">Analisi AI in corso…</p>
-                    : <p className="text-sm italic text-neutral-400">Risposta non ancora generata</p>;
-                })()}
+                <p className="text-sm italic text-neutral-400">
+                  {reviewAgeMin < 15 ? 'Analisi AI in corso…' : 'Risposta non ancora generata'}
+                </p>
               )}
             </div>
 
