@@ -501,6 +501,8 @@ app.post('/reviews/:id/approve', async (req, res) => {
   try {
     if (review.source === 'gmb') {
       await pubblicaRispostaGMB(review.trustpilot_id, testo_risposta);
+    } else if (review.source === 'playstore') {
+      await rispondiPlayStore(review.trustpilot_id, testo_risposta);
     } else {
       await pubblicaRispostaTrustpilot(review.trustpilot_id, testo_risposta);
     }
