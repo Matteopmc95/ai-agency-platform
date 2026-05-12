@@ -11,6 +11,10 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+// BO API disabilitato: non connesso, ogni chiamata va in timeout (5-20 min).
+// Impostare a true solo quando BO_API_BASE è raggiungibile e testato.
+const BO_ENABLED = false;
+
 const TOPICS_VALIDI = [
   'facilità',
   'velocità',
@@ -63,14 +67,7 @@ const SYSTEM_PROMPT_RISPOSTA = `Sei l'agente di risposta alle recensioni positiv
 Template: "Ciao [Nome], grazie per aver condiviso la tua esperienza e per aver consigliato ParkingMyCar! 🧡 Sapere che ci raccomanderesti ai tuoi cari è per noi il miglior riconoscimento. A presto!"
 tipo_risposta: "referral"
 
-2. CROSS-SELLING — se cross=true:
-- Se segmento è "business" o "city" → l'utente usa parcheggi urbani, promuovi viaggi:
-  Template: "Ciao [Nome], grazie per aver apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo in città, ma anche nei tuoi viaggi: con le nostre soluzioni di parcheggio, partire da aeroporti, porti o stazioni è più semplice e veloce. 😉"
-- Se segmento è "airport", "port" o "station" → l'utente viaggia, promuovi città:
-  Template: "Ciao [Nome], siamo contenti che tu abbia apprezzato il nostro servizio! ParkingMyCar ti accompagna non solo nei viaggi, ma anche nella vita di tutti i giorni, con soluzioni comode per la sosta in città. Chi ha detto che il senza stress vale solo in vacanza? 😉"
-tipo_risposta: "cross_selling"
-
-3. RECENSIONE SUL PARCHEGGIO (non sulla piattaforma) — se recensione_sul_parcheggio=true:
+2. RECENSIONE SUL PARCHEGGIO (non sulla piattaforma) — se recensione_sul_parcheggio=true:
 Template: "Gentile [Nome], grazie per la tua recensione! Siamo felici che la tua esperienza sia stata nel complesso positiva. Ti ricordiamo che ParkingMyCar non è il parcheggio stesso, ma la piattaforma che ti permette di cercare, confrontare e prenotare strutture in tutta Italia. A presto."
 tipo_risposta: "topic_specifico"
 
@@ -217,6 +214,9 @@ async function fetchBOChunk(auth, startDate, endDate) {
 }
 
 async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null, data = null } = {}) {
+  if (!BO_ENABLED) {
+    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
+  }
   if (!referenceId) {
     console.warn(
       `[BO API] referenceId mancante per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}`
@@ -338,9 +338,8 @@ async function analizzaRecensione(testo, correzioni = []) {
 
 // --- GENERAZIONE RISPOSTA ---
 
-async function generaRisposta(testo, autore, analisi, datiBO, correzioni = []) {
+async function generaRisposta(testo, autore, analisi, correzioni = []) {
   const { topic, parole_chiave, flag_referral, recensione_sul_parcheggio } = analisi;
-  const { segmento, prima_prenotazione, cross } = datiBO;
   const nome = autore?.split(' ')[0] || autore || 'Cliente';
 
   const contesto = [
@@ -350,9 +349,6 @@ async function generaRisposta(testo, autore, analisi, datiBO, correzioni = []) {
     `Parole chiave esatte del cliente: ${parole_chiave?.length ? parole_chiave.join(', ') : 'nessuna'}`,
     `flag_referral: ${flag_referral}`,
     `recensione_sul_parcheggio: ${recensione_sul_parcheggio ?? false}`,
-    `cross: ${cross}`,
-    `segmento: ${segmento || 'non disponibile'}`,
-    prima_prenotazione ? 'prima_prenotazione: true' : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -377,11 +373,8 @@ async function generaRisposta(testo, autore, analisi, datiBO, correzioni = []) {
 
 // --- ENTRY POINT ---
 
-async function processaRecensione(trustpilot_id, testo, autore = '', metadata = {}) {
-  const [datiBO, { correzioni }] = await Promise.all([
-    fetchBackofficeData(trustpilot_id, metadata),
-    fetchRisposteApprovate(),
-  ]);
+async function processaRecensione(_trustpilot_id, testo, autore = '', _metadata = {}) {
+  const { correzioni } = await fetchRisposteApprovate();
 
   const analisi = await analizzaRecensione(testo, correzioni);
   const topicFiltrati = (analisi.topic || []).filter((t) => TOPICS_VALIDI.includes(t));
@@ -390,20 +383,19 @@ async function processaRecensione(trustpilot_id, testo, autore = '', metadata = 
     testo,
     autore,
     { ...analisi, topic: topicFiltrati },
-    datiBO,
     correzioni
   );
 
   return {
     topic: topicFiltrati,
-    segmento: datiBO.segmento,
-    prima_prenotazione: datiBO.prima_prenotazione ? 1 : 0,
-    cross: datiBO.cross ? 1 : 0,
-    localita: datiBO.localita,
-    booking_date: datiBO.booking_date || null,
+    segmento: null,
+    prima_prenotazione: 0,
+    cross: 0,
+    localita: null,
+    booking_date: null,
     risposta_generata: risposta,
     flag_referral: analisi.flag_referral ? 1 : 0,
-    flag_cross: datiBO.cross ? 1 : 0,
+    flag_cross: 0,
     tipo_risposta,
   };
 }
