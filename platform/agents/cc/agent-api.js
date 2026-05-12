@@ -845,22 +845,24 @@ app.post('/reviews/:id/regenerate', async (req, res) => {
 
   if (!review) return res.status(404).json({ errore: 'Recensione non trovata' });
 
-  try {
-    const analisi = await processaRecensione(
-      review.trustpilot_id,
-      review.testo,
-      review.autore,
-      { referenceId: review.reference_id ?? null, data: review.data ?? null }
-    );
+  // Risposta immediata — l'AI gira in background (può richiedere minuti)
+  res.json({ ok: true, status: 'started', review_id });
 
-    console.log('[regenerate] saving analysis', review_id);
-    await salvaAnalisi(review_id, analisi);
-    await log('agent-api', 'risposta_rigenerata', { review_id });
-    res.json({ ok: true, review_id, analisi });
-  } catch (err) {
-    await log('agent-api', 'regenerate_errore', { review_id, errore: err.message });
-    res.status(500).json({ errore: err.message });
-  }
+  setImmediate(async () => {
+    try {
+      const analisi = await processaRecensione(
+        review.trustpilot_id,
+        review.testo,
+        review.autore,
+        { referenceId: review.reference_id ?? null, data: review.data ?? null }
+      );
+      console.log('[regenerate] saving analysis', review_id);
+      await salvaAnalisi(review_id, analisi);
+      await log('agent-api', 'risposta_rigenerata', { review_id });
+    } catch (err) {
+      await log('agent-api', 'regenerate_errore', { review_id, errore: err.message });
+    }
+  });
 });
 
 // --- RIGENERA PENDING IN BULK ---
@@ -1381,7 +1383,8 @@ app.get('/stats', async (req, res) => {
   let primaPrenotazione = 0;
 
   for (const review of chartReviews || []) {
-    const analysis = review.review_analysis?.[0] || {};
+    const ra = review.review_analysis;
+    const analysis = Array.isArray(ra) ? (ra[0] || {}) : (ra || {});
     const topics = normalizeTopicList(analysis.topic).map((t) => t.trim().toLowerCase());
     const segmento = analysis.segmento;
 
@@ -1454,7 +1457,8 @@ app.get('/stats/topics-by-segment', async (req, res) => {
   const grouped = {};
 
   for (const review of reviews || []) {
-    const analysis = review.review_analysis?.[0] || {};
+    const ra = review.review_analysis;
+    const analysis = Array.isArray(ra) ? (ra[0] || {}) : (ra || {});
     const segmento = analysis.segmento;
     const topics = normalizeTopicList(analysis.topic).map((topic) => topic.trim().toLowerCase());
 

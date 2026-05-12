@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SegmentBadge, SourceBadge, StatusBadge, TopicBadge } from './Badge';
 import Stars from './Stars';
-import { approveReview, getErrorMessage, regenerateReview } from '../lib/api';
+import { approveReview, fetchReview, getErrorMessage, regenerateReview } from '../lib/api';
 import { formatDate, getVisibleTopics, truncateText } from '../lib/utils';
 
 export default function ReviewRow({ review: initialReview, compact = false, onUpdate }) {
@@ -49,24 +49,45 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
   }
 
   async function handleRegenerate() {
+    setRegenerateLoading(true);
+    setActionError('');
+    const prevAnalisiAt = review.analisi_at;
+
     try {
-      setRegenerateLoading(true);
-      setActionError('');
-      const result = await regenerateReview(review.id);
-      const generated = result.analisi?.risposta_generata || '';
-      setResponseText(generated);
-      setDraftResponseText(generated);
-      setIsEditing(false);
-      applyUpdate({
-        ...result.analisi,
-        topic: result.analisi?.topic || [],
-        risposta_generata: generated,
-      });
+      await regenerateReview(review.id); // risposta immediata dal backend
     } catch (err) {
-      setActionError(getErrorMessage(err, 'Impossibile rigenerare la risposta, riprova.'));
-    } finally {
       setRegenerateLoading(false);
+      setActionError(getErrorMessage(err, 'Impossibile avviare la rigenerazione, riprova.'));
+      return;
     }
+
+    // Polling ogni 10s — aspetta che analisi_at cambi (AI completata)
+    const POLL_MS = 10_000;
+    const MAX_POLLS = 30; // 5 minuti
+    let polls = 0;
+    const timer = setInterval(async () => {
+      try {
+        polls++;
+        const updated = await fetchReview(review.id);
+        if (updated.analisi_at !== prevAnalisiAt) {
+          clearInterval(timer);
+          setRegenerateLoading(false);
+          const generated = updated.risposta_generata || '';
+          setResponseText(generated);
+          setDraftResponseText(generated);
+          setIsEditing(false);
+          applyUpdate({ ...updated, risposta_generata: generated });
+        } else if (polls >= MAX_POLLS) {
+          clearInterval(timer);
+          setRegenerateLoading(false);
+          setActionError('Rigenerazione in corso nel backend, ricarica la pagina tra qualche minuto.');
+        }
+      } catch (pollErr) {
+        clearInterval(timer);
+        setRegenerateLoading(false);
+        setActionError(getErrorMessage(pollErr, 'Errore durante la rigenerazione, riprova.'));
+      }
+    }, POLL_MS);
   }
 
   function handleEdit() {
