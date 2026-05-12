@@ -122,16 +122,16 @@ export default function ReviewDetailPage() {
     setActionError('');
     setActionMessage('');
     const prevAnalisiAt = review?.analisi_at;
+    const prevRisposta = responseText;
 
     try {
-      await regenerateReview(id); // risposta immediata dal backend
+      await regenerateReview(id);
     } catch (regenerateError) {
       setRegenerateLoading(false);
       setActionError(getErrorMessage(regenerateError, 'Impossibile avviare la rigenerazione, riprova.'));
       return;
     }
 
-    // Polling ogni 10s — aspetta che analisi_at cambi (AI completata)
     const POLL_MS = 10_000;
     const MAX_POLLS = 30; // 5 minuti
     let polls = 0;
@@ -139,7 +139,10 @@ export default function ReviewDetailPage() {
       try {
         polls++;
         const updated = await fetchReview(id);
-        if (updated.analisi_at !== prevAnalisiAt) {
+        const changed =
+          (updated.analisi_at && updated.analisi_at !== prevAnalisiAt) ||
+          (updated.risposta_generata && updated.risposta_generata !== prevRisposta);
+        if (changed) {
           clearInterval(timer);
           setRegenerateLoading(false);
           setReview((current) => current ? { ...current, ...updated } : current);
@@ -150,7 +153,7 @@ export default function ReviewDetailPage() {
         } else if (polls >= MAX_POLLS) {
           clearInterval(timer);
           setRegenerateLoading(false);
-          setActionError('Rigenerazione in corso nel backend, ricarica la pagina tra qualche minuto.');
+          setActionError('Errore: ricarica la pagina tra qualche minuto.');
         }
       } catch (pollErr) {
         clearInterval(timer);

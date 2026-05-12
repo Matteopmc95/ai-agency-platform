@@ -52,16 +52,16 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
     setRegenerateLoading(true);
     setActionError('');
     const prevAnalisiAt = review.analisi_at;
+    const prevRisposta = responseText;
 
     try {
-      await regenerateReview(review.id); // risposta immediata dal backend
+      await regenerateReview(review.id);
     } catch (err) {
       setRegenerateLoading(false);
       setActionError(getErrorMessage(err, 'Impossibile avviare la rigenerazione, riprova.'));
       return;
     }
 
-    // Polling ogni 10s — aspetta che analisi_at cambi (AI completata)
     const POLL_MS = 10_000;
     const MAX_POLLS = 30; // 5 minuti
     let polls = 0;
@@ -69,7 +69,10 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
       try {
         polls++;
         const updated = await fetchReview(review.id);
-        if (updated.analisi_at !== prevAnalisiAt) {
+        const changed =
+          (updated.analisi_at && updated.analisi_at !== prevAnalisiAt) ||
+          (updated.risposta_generata && updated.risposta_generata !== prevRisposta);
+        if (changed) {
           clearInterval(timer);
           setRegenerateLoading(false);
           const generated = updated.risposta_generata || '';
@@ -80,7 +83,7 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
         } else if (polls >= MAX_POLLS) {
           clearInterval(timer);
           setRegenerateLoading(false);
-          setActionError('Rigenerazione in corso nel backend, ricarica la pagina tra qualche minuto.');
+          setActionError('Errore: ricarica la pagina tra qualche minuto.');
         }
       } catch (pollErr) {
         clearInterval(timer);
@@ -191,7 +194,13 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
                   </button>
                 </div>
               ) : (
-                <p className="text-sm italic text-neutral-400">Risposta non ancora generata</p>
+                {/* Review recente (< 15 min) senza risposta: probabilmente AI ancora in corso */}
+                {(() => {
+                  const ageMin = (Date.now() - new Date(review.data).getTime()) / 60_000;
+                  return ageMin < 15
+                    ? <p className="text-sm italic text-neutral-400">Analisi AI in corso…</p>
+                    : <p className="text-sm italic text-neutral-400">Risposta non ancora generata</p>;
+                })()}
               )}
             </div>
 
