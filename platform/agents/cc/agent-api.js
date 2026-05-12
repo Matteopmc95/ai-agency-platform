@@ -966,7 +966,7 @@ async function fetchReviewsSenzaAI() {
 }
 
 // POST /admin/generate-missing-ai — avvia il job in background
-app.post('/admin/generate-missing-ai', authMiddleware, async (_req, res) => {
+app.post('/admin/generate-missing-ai', async (_req, res) => {
   if (jobState.status === 'running') {
     return res.status(409).json({
       errore: 'Job già in esecuzione',
@@ -1042,7 +1042,7 @@ app.post('/admin/generate-missing-ai', authMiddleware, async (_req, res) => {
 });
 
 // GET /admin/generate-missing-ai/status — stato del job in corso
-app.get('/admin/generate-missing-ai/status', authMiddleware, (_req, res) => {
+app.get('/admin/generate-missing-ai/status', (_req, res) => {
   res.json({
     jobId:     jobState.jobId,
     status:    jobState.status,
