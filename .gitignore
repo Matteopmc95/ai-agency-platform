@@ -4,3 +4,4 @@ node_modules/
 .env
 google-service-account.json
 apple-key.p8
+platform/scripts/

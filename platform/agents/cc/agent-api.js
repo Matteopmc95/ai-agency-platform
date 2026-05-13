@@ -1541,6 +1541,116 @@ app.listen(PORT, () => {
     }, 5 * 60 * 1000);
     console.log('[GMB] Poller schedulato (primo poll tra 5 min, poi ogni 30 min)');
   }
+
+  // BO Sync notturno — attivare con BO_SYNC_ENABLED=true su Railway
+  // if (process.env.BO_SYNC_ENABLED === 'true') {
+  //   startBOSync();
+  //   console.log('[BO SYNC] Cron notturno schedulato (03:00 Europe/Rome)');
+  // }
 });
+
+// ── BO SYNC NOTTURNO ─────────────────────────────────────────────────────────
+// Attivare aggiungendo BO_SYNC_ENABLED=true su Railway.
+// Gira ogni notte alle 03:00 Europe/Rome (check ogni 5 min).
+
+let _boSyncLastDate = null; // YYYY-MM-DD — evita doppia esecuzione nella stessa notte
+
+async function syncBOForDate(dateStr) {
+  const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
+  let csvText;
+  for (let t = 1; t <= 3; t++) {
+    try {
+      const { data } = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
+        headers: { Authorization: `Basic ${auth}`, Accept: 'text/csv' },
+        params: { start_date: dateStr, end_date: dateStr },
+        timeout: 60000, responseType: 'text',
+      });
+      csvText = data;
+      break;
+    } catch (err) {
+      if (t < 3) { await new Promise(r => setTimeout(r, 60000 * t)); continue; }
+      throw err;
+    }
+  }
+
+  function parseLine(line) {
+    const result = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    result.push(cur.trim()); return result;
+  }
+
+  const lines   = csvText.split('\n').map(l => l.trim()).filter(Boolean);
+  const headers = lines[0].replace(/^﻿/, '').split(',').map(h => h.trim());
+  const toTs    = v => { if (!v?.trim()) return null; const d = new Date(v.trim().replace(' ','T')+'Z'); return isNaN(d.getTime()) ? null : d.toISOString(); };
+  const toNum   = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+
+  const rows = lines.slice(1).map(line => {
+    const vals = parseLine(line);
+    if (vals.length !== headers.length) return null;
+    const r = Object.fromEntries(headers.map((h, i) => [h, vals[i] ?? '']));
+    const tid = (r.transaction_id || '').trim();
+    if (!tid) return null;
+    return {
+      transaction_id: tid,
+      user_email_sha256: (r.user_email_sha256 || '').trim().toLowerCase() || null,
+      segmento: (r.type || r.parking_type || '').trim() || null,
+      transaction_date: toTs(r.transaction_date), booking_start: toTs(r.booking_start), booking_end: toTs(r.booking_end),
+      location_name: (r.location_name || '').trim() || null, parking_name: (r.parking_name || '').trim() || null,
+      final_price: toNum(r.final_price), paid_price: toNum(r.paid_price),
+      user_first_booking_date: toTs(r.user_first_booking_date),
+      user_first_booking_parking_type: (r.user_first_booking_parking_type || '').trim() || null,
+      transaction_state: (r.transaction_state || '').trim() || null,
+      synced_at: new Date().toISOString(),
+    };
+  }).filter(Boolean);
+
+  const BATCH = 500;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const { error } = await supabase.from('bo_bookings').upsert(rows.slice(i, i + BATCH), { onConflict: 'transaction_id' });
+    if (error) throw new Error(error.message);
+  }
+  return rows.length;
+}
+
+function startBOSync() {
+  setInterval(async () => {
+    const romeHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date()));
+    const romeMin  = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', minute: 'numeric' }).format(new Date()));
+    const today    = new Date().toISOString().slice(0, 10);
+    if (romeHour !== 3 || romeMin >= 5 || _boSyncLastDate === today) return;
+
+    _boSyncLastDate = today;
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    try {
+      const n = await syncBOForDate(yesterday);
+      await log('agent-api', 'bo_sync_completato', { date: yesterday, righe: n });
+      console.log(`[BO SYNC] ${n} righe sincronizzate per data ${yesterday}`);
+      // Nessun alert Telegram su successo — solo log
+    } catch (err) {
+      await log('agent-api', 'bo_sync_errore', { date: yesterday, errore: err.message });
+      console.error(`[BO SYNC] Errore per ${yesterday}: ${err.message}`);
+      // Alert Telegram su fallimento totale (graceful, non blocca)
+      try {
+        const https = require('https');
+        const tok = process.env.TELEGRAM_BOT_TOKEN;
+        const cid = process.env.TELEGRAM_ALERT_CHAT_ID;
+        if (tok && cid) {
+          const body = JSON.stringify({ chat_id: cid, parse_mode: 'HTML',
+            text: `🔴 <b>CRON BO FALLITO</b>\nData: ${yesterday}\nErrore: <code>${err.message.slice(0, 200)}</code>` });
+          const req = https.request({ hostname: 'api.telegram.org', path: `/bot${tok}/sendMessage`,
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 },
+            () => {});
+          req.on('error', () => {});
+          req.write(body); req.end();
+        }
+      } catch (_) { /* alert failure non blocca */ }
+    }
+  }, 5 * 60 * 1000); // check ogni 5 minuti
+}
 
 module.exports = app;

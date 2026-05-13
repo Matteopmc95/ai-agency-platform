@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sf https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/debug-env)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform commit -m ' *)",
+      "Bash(curl -sf https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/import-bulk/status)",
+      "Bash(curl -s https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/locations)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Location trovate:', d['total']\\); [print\\(' -', l['displayName'], '|', l['fullPath']\\) for l in d['locations'][:5]]\")",
+      "Bash(curl -s -X POST https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/import-bulk)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/frontend/cc/src/pages/AnalyticsPage.jsx)",
+      "Bash(2>/dev/null)",
+      "Bash(curl -s --max-time 15 https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/locations)",
+      "Bash(curl -s --max-time 60 https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/locations)",
+      "Bash(curl -s https://ai-agency-platform-production-fc09.up.railway.app/admin/gmb/import-bulk/status)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/agents/cc/agent-api.js platform/frontend/cc/src/components/ReviewRow.jsx platform/frontend/cc/src/pages/ReviewDetailPage.jsx)",
+      "Bash(curl -sf https://ai-agency-platform-production-fc09.up.railway.app/stats)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/frontend/cc/src/components/ReviewRow.jsx platform/frontend/cc/src/pages/ReviewDetailPage.jsx)",
+      "Bash(curl -sf https://ai-agency-platform-production-fc09.up.railway.app/admin/generate-missing-ai/status)",
+      "Bash(curl -s https://ai-agency-platform-production-fc09.up.railway.app/admin/generate-missing-ai/status)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/agents/cc/agent-reviews.js)",
+      "Bash(curl -sf https://ai-agency-platform-git-main-matteo-pmcs-projects.vercel.app/api/health)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform log --oneline -1)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform log -n 5 --oneline)",
+      "Bash(curl -s \"https://api.vercel.com/v6/deployments?limit=3&target=production\" -H \"Authorization: Bearer $\\(grep VERCEL_TOKEN /Users/matteobartoli/Desktop/ai-agency-platform/.env)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(dep.get\\('uid','?'\\)[:12], dep.get\\('state','?'\\), dep.get\\('meta',{}\\).get\\('githubCommitSha','?'\\)[:8], dep.get\\('createdAt','?'\\)\\) for dep in d.get\\('deployments',[]\\)]\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" https://ai-agency-platform-git-main-matteo-pmcs-projects.vercel.app/)",
+      "Bash(npm run *)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/frontend/cc/src/components/ReviewRow.jsx)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); deps={**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}; print\\('\\\\n'.join\\(f'{k}: {v}' for k,v in deps.items\\(\\)\\)\\)\")",
+      "Bash(curl -sf \"https://ai-agency-platform-production-fc09.up.railway.app/stats?from_date=2026-05-01&to_date=2026-05-31\")",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/frontend/cc/src/pages/AnalyticsPage.jsx platform/frontend/cc/package.json platform/frontend/cc/package-lock.json)",
+      "Bash(curl -sf https://ai-agency-platform-git-main-matteo-pmcs-projects.vercel.app/ -o /dev/null)",
+      "Bash(git -C /Users/matteobartoli/Desktop/ai-agency-platform add platform/frontend/cc/src/components/AnalyticsReport.jsx)",
+      "Read(//private/tmp/**)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d.get\\('dependencies',{}\\).keys\\(\\)\\)\\)\")",
+      "Bash(python3 -c ' *)",
+      "Bash(grep \"^\\\\.env$\\\\|^platform/\\\\.env\\\\|/\\\\.env$\" /Users/matteobartoli/Desktop/ai-agency-platform/.gitignore)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
+    ]
+  }
+}
