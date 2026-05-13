@@ -1318,14 +1318,29 @@ app.get('/logs', async (req, res) => {
 // --- STATS ---
 // GET /stats
 app.get('/stats', async (req, res) => {
-  const { period = 'month', source } = req.query;
-  const periodStart = getPeriodStart(period);
+  const { period = 'month', source, from_date, to_date } = req.query;
+
+  // from_date/to_date override period when both are present
+  let dateStart = null, dateEnd = null;
+  if (from_date || to_date) {
+    if (!from_date || !to_date)
+      return res.status(400).json({ errore: 'Specificare sia from_date che to_date' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from_date) || !/^\d{4}-\d{2}-\d{2}$/.test(to_date))
+      return res.status(400).json({ errore: 'Formato data non valido (YYYY-MM-DD)' });
+    if (from_date > to_date)
+      return res.status(400).json({ errore: 'from_date deve essere ≤ to_date' });
+    dateStart = from_date;
+    dateEnd   = to_date + 'T23:59:59.999Z';
+  } else {
+    dateStart = getPeriodStart(period);
+  }
 
   const todayStr = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
 
   function buildCountQuery(filters = {}) {
     let q = supabase.from('reviews').select('*', { count: 'exact', head: true });
-    if (periodStart) q = q.gte('data', periodStart);
+    if (dateStart) q = q.gte('data', dateStart);
+    if (dateEnd)   q = q.lte('data', dateEnd);
     q = applySourceFilter(q, source);
     for (const [k, v] of Object.entries(filters)) q = q.eq(k, v);
     return q;
@@ -1339,7 +1354,8 @@ app.get('/stats', async (req, res) => {
       )
     `)
     .range(0, 9999);
-  if (periodStart) chartQuery = chartQuery.gte('data', periodStart);
+  if (dateStart) chartQuery = chartQuery.gte('data', dateStart);
+  if (dateEnd)   chartQuery = chartQuery.lte('data', dateEnd);
   chartQuery = applySourceFilter(chartQuery, source);
 
   let todayCountQuery = supabase
@@ -1433,8 +1449,21 @@ app.get('/stats', async (req, res) => {
 // --- TOPICS BY SEGMENT ---
 // GET /stats/topics-by-segment
 app.get('/stats/topics-by-segment', async (req, res) => {
-  const { period = 'month', source } = req.query;
-  const periodStart = getPeriodStart(period);
+  const { period = 'month', source, from_date, to_date } = req.query;
+
+  let dateStart = null, dateEnd = null;
+  if (from_date || to_date) {
+    if (!from_date || !to_date)
+      return res.status(400).json({ errore: 'Specificare sia from_date che to_date' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from_date) || !/^\d{4}-\d{2}-\d{2}$/.test(to_date))
+      return res.status(400).json({ errore: 'Formato data non valido (YYYY-MM-DD)' });
+    if (from_date > to_date)
+      return res.status(400).json({ errore: 'from_date deve essere ≤ to_date' });
+    dateStart = from_date;
+    dateEnd   = to_date + 'T23:59:59.999Z';
+  } else {
+    dateStart = getPeriodStart(period);
+  }
 
   let query = supabase
     .from('reviews')
@@ -1445,9 +1474,8 @@ app.get('/stats/topics-by-segment', async (req, res) => {
       )
     `);
 
-  if (periodStart) {
-    query = query.gte('data', periodStart);
-  }
+  if (dateStart) query = query.gte('data', dateStart);
+  if (dateEnd)   query = query.lte('data', dateEnd);
   query = applySourceFilter(query, source);
 
   const { data: reviews, error } = await query;
