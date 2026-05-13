@@ -185,7 +185,8 @@ async function salvaAnalisi(review_id, analisi) {
 
   const reviewPayload = {
     analisi_at: new Date().toISOString(),
-    ...(analisi.booking_date ? { booking_date: analisi.booking_date } : {}),
+    ...(analisi.booking_date       ? { booking_date:       analisi.booking_date }       : {}),
+    ...(analisi.enrichment_status  ? { enrichment_status:  analisi.enrichment_status }  : {}),
   };
 
   const { error: rError } = await supabase

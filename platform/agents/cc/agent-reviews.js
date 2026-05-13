@@ -1,6 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk');
-const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const { boLookup } = require('./utils/bo-lookup');
 
 console.log('[anthropic] key loaded:', process.env.ANTHROPIC_API_KEY ? 'YES (' + process.env.ANTHROPIC_API_KEY.substring(0, 10) + '...)' : 'NO');
 
@@ -10,10 +10,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
-
-// BO API disabilitato: non connesso, ogni chiamata va in timeout (5-20 min).
-// Impostare a true solo quando BO_API_BASE è raggiungibile e testato.
-const BO_ENABLED = false;
 
 const TOPICS_VALIDI = [
   'facilità',
@@ -125,157 +121,6 @@ function parseJSONResponse(raw) {
   return JSON.parse(cleaned);
 }
 
-// --- CSV PARSER ---
-
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.trim());
-  return result;
-}
-
-function parseCSV(csvText) {
-  const lines = csvText.trim().split('\n').filter(l => l.trim());
-  if (lines.length < 2) return [];
-
-  const headers = parseCSVLine(lines[0]).map(h => h.trim());
-  return lines.slice(1).map((line) => {
-    const values = parseCSVLine(line);
-    return Object.fromEntries(headers.map((h, i) => [h, values[i] ?? '']));
-  });
-}
-
-// --- BO API ---
-
-function toISODate(d) {
-  return d.toISOString().slice(0, 10);
-}
-
-function normalizeDateOnly(value) {
-  if (!value) return null;
-  const raw = String(value).trim();
-  if (!raw) return null;
-
-  const isoMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (isoMatch) return isoMatch[1];
-
-  const italianMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-  if (italianMatch) return `${italianMatch[3]}-${italianMatch[2]}-${italianMatch[1]}`;
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 10);
-}
-
-// Cache in memoria per i CSV scaricati dal BO: chiave "start-end", scadenza 1 ora
-const boCache = new Map();
-const BO_CACHE_TTL_MS = 60 * 60 * 1000;
-
-async function fetchBOChunk(auth, startDate, endDate) {
-  const key = `${toISODate(startDate)}-${toISODate(endDate)}`;
-  const cached = boCache.get(key);
-  if (cached && Date.now() - cached.ts < BO_CACHE_TTL_MS) {
-    return cached.rows;
-  }
-
-  const response = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
-    headers: {
-      Authorization: `Basic ${auth}`,
-      Accept: 'text/csv',
-    },
-    params: {
-      start_date: toISODate(startDate),
-      end_date: toISODate(endDate),
-    },
-    timeout: 15000,
-  });
-
-  const rows = parseCSV(response.data);
-  boCache.set(key, { rows, ts: Date.now() });
-  return rows;
-}
-
-async function fetchBackofficeData(trustpilot_id, { referenceId = null, consumer_id = null, data = null } = {}) {
-  if (!BO_ENABLED) {
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
-  }
-  if (!referenceId) {
-    console.warn(
-      `[BO API] referenceId mancante per trustpilot_id=${trustpilot_id} consumer_id=${consumer_id ?? 'n.d.'}`
-    );
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
-  }
-
-  const transactionId = String(referenceId).trim();
-  const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
-
-  // La prenotazione è sempre PRIMA della review: cerchiamo a ritroso fino a 6 mesi
-  const endDate = data ? new Date(data) : new Date();
-  const limitDate = new Date(endDate);
-  limitDate.setDate(limitDate.getDate() - 180);
-
-  let chunkEnd = new Date(endDate);
-  let attempt = 0;
-
-  try {
-    while (chunkEnd > limitDate) {
-      attempt++;
-      const chunkStart = new Date(chunkEnd);
-      chunkStart.setDate(chunkStart.getDate() - 31);
-      if (chunkStart < limitDate) chunkStart.setTime(limitDate.getTime());
-
-      const rows = await fetchBOChunk(auth, chunkStart, chunkEnd);
-      const bookingRow = rows.find(r => String(r.transaction_id ?? '').trim() === transactionId);
-
-      console.log(`[bo] tentativo ${attempt}: range ${toISODate(chunkStart)} - ${toISODate(chunkEnd)}, trovato=${!!bookingRow}, transaction_id=${transactionId}`);
-
-      if (bookingRow) {
-        const bookingDate = normalizeDateOnly(bookingRow.booking_start);
-        const firstBookingDate = normalizeDateOnly(bookingRow.user_first_booking_date);
-        const primaPrenotazione = !!(bookingDate && firstBookingDate && firstBookingDate === bookingDate);
-
-        const firstParkingType = bookingRow.user_first_booking_parking_type?.trim() || null;
-        const currentParkingType = bookingRow.parking_type?.trim() || null;
-        const cross = !!(firstParkingType && currentParkingType && firstParkingType !== currentParkingType);
-
-        return {
-          segmento: currentParkingType || null,
-          prima_prenotazione: primaPrenotazione,
-          cross,
-          localita: bookingRow.location_name || null,
-          booking_date: bookingDate,
-        };
-      }
-
-      // Sposta la finestra indietro di 31 giorni
-      chunkEnd = new Date(chunkStart);
-    }
-
-    console.warn(`[bo] transaction_id=${transactionId} non trovato in 6 mesi di storico (${attempt} tentativi)`);
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
-  } catch (err) {
-    console.error(`[BO API] Errore chiamata booking-details: ${err.message}`);
-    return { segmento: null, prima_prenotazione: false, cross: false, localita: null, booking_date: null };
-  }
-}
 
 // --- SUPABASE: RISPOSTE APPROVATE E CORREZIONI UMANE ---
 
@@ -373,7 +218,20 @@ async function generaRisposta(testo, autore, analisi, correzioni = []) {
 
 // --- ENTRY POINT ---
 
-async function processaRecensione(_trustpilot_id, testo, autore = '', _metadata = {}) {
+async function processaRecensione(_trustpilot_id, testo, autore = '', metadata = {}) {
+  // ── BO lookup via Supabase (sostituisce CSV download) ──────────────────────
+  let boData = null;
+  let enrichmentStatus;
+
+  const referenceId = metadata.referenceId || metadata.reference_id || null;
+  if (referenceId) {
+    boData = await boLookup(String(referenceId).trim());
+    enrichmentStatus = boData ? 'matched' : 'pending_sync';
+    if (!boData) console.warn(`[bo-lookup] transaction_id=${referenceId} non trovato in bo_bookings → pending_sync`);
+  } else {
+    enrichmentStatus = 'organic_or_non_trustpilot';
+  }
+
   const { correzioni } = await fetchRisposteApprovate();
 
   const analisi = await analizzaRecensione(testo, correzioni);
@@ -387,16 +245,17 @@ async function processaRecensione(_trustpilot_id, testo, autore = '', _metadata 
   );
 
   return {
-    topic: topicFiltrati,
-    segmento: null,
-    prima_prenotazione: 0,
-    cross: 0,
-    localita: null,
-    booking_date: null,
-    risposta_generata: risposta,
-    flag_referral: analisi.flag_referral ? 1 : 0,
-    flag_cross: 0,
+    topic:              topicFiltrati,
+    segmento:           boData?.segmento           || null,
+    prima_prenotazione: boData?.prima_prenotazione ? 1 : 0,
+    cross:              boData?.cross              ? 1 : 0,
+    localita:           boData?.location_name      || null,  // location_name → localita
+    booking_date:       boData?.transaction_date   || null,  // transaction_date → booking_date
+    risposta_generata:  risposta,
+    flag_referral:      analisi.flag_referral ? 1 : 0,
+    flag_cross:         boData?.cross ? 1 : 0,
     tipo_risposta,
+    enrichment_status:  enrichmentStatus,
   };
 }
 
