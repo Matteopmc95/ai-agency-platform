@@ -1,263 +1,281 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AnalyticsReport from '../components/AnalyticsReport';
 import ErrorState from '../components/ErrorState';
 import LoadingState from '../components/LoadingState';
+import ReviewRow from '../components/ReviewRow';
+import { HorizontalBarChart } from '../components/Charts';
 import { fetchReviews, fetchStats, fetchTopicsBySegment, getErrorMessage } from '../lib/api';
 import { getStarDistribution } from '../lib/utils';
-import { HorizontalBarChart } from '../components/Charts';
-import ReviewRow from '../components/ReviewRow';
 
-const tabs = [
-  { key: 'all',        label: 'Tutte le fonti' },
-  { key: 'trustpilot', label: 'Trustpilot' },
-  { key: 'playstore',  label: 'Android Play Store' },
-  { key: 'apple',      label: 'iOS App Store' },
-  { key: 'google',     label: 'Google My Business' },
+// ── helpers ────────────────────────────────────────────────────────────────
+
+const MONTHS = [
+  'Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+  'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre',
 ];
 
+const CHANNELS = [
+  { value: '',           label: 'Tutti i canali' },
+  { value: 'trustpilot', label: 'Trustpilot' },
+  { value: 'apple',      label: 'iOS App Store' },
+  { value: 'playstore',  label: 'Android Play Store' },
+  { value: 'gmb',        label: 'Google My Business' },
+];
+
+function lastDayOfMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function isoDate(year, month, day) {
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+// ── component ──────────────────────────────────────────────────────────────
+
 export default function AnalyticsPage() {
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
-  const [activeTab, setActiveTab] = useState('all');
+  const now = new Date();
+  const analyticsRef = useRef(null);
 
-  const [trustpilotStats,  setTrustpilotStats]  = useState(null);
-  const [trustpilotTopics, setTrustpilotTopics] = useState(null);
-  const [playstoreStats,   setPlaystoreStats]   = useState(null);
-  const [playstoreTopics,  setPlaystoreTopics]  = useState(null);
-  const [appleStats,       setAppleStats]       = useState(null);
-  const [appleReviews,     setAppleReviews]     = useState(null);
-  const [gmbStats,         setGmbStats]         = useState(null);
-  const [gmbTopics,        setGmbTopics]        = useState(null);
-  const [allStats,         setAllStats]         = useState(null);
-  const [allTopics,        setAllTopics]        = useState(null);
+  // Period mode: 'month' | 'range'
+  const [periodMode, setPeriodMode] = useState('month');
 
+  // Month-mode state (default: current month)
+  const [selYear,  setSelYear]  = useState(now.getFullYear());
+  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
+
+  // Range-mode state (default: last 30 days)
+  const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const [rangeFrom, setRangeFrom] = useState(isoDate(thirtyDaysAgo.getFullYear(), thirtyDaysAgo.getMonth()+1, thirtyDaysAgo.getDate()));
+  const [rangeTo,   setRangeTo]   = useState(isoDate(now.getFullYear(), now.getMonth()+1, now.getDate()));
+
+  // Channel
+  const [channel, setChannel] = useState('');
+
+  // Data
+  const [stats,  setStats]  = useState(null);
+  const [topics, setTopics] = useState(null);
+  const [appleReviews, setAppleReviews] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
 
-  useEffect(() => {
-    async function loadAnalytics() {
-      try {
-        setLoading(true);
-        setError('');
-
-        const [
-          trustStatsData,
-          trustTopicsData,
-          androidStatsData,
-          androidTopicsData,
-          appleStatsData,
-          appleReviewsData,
-          gmbStatsData,
-          gmbTopicsData,
-          allStatsData,
-          allTopicsData,
-        ] = await Promise.all([
-          fetchStats({ period: selectedPeriod, source: 'trustpilot' }),
-          fetchTopicsBySegment({ period: selectedPeriod, source: 'trustpilot' }),
-          fetchStats({ period: selectedPeriod, source: 'playstore' }),
-          fetchTopicsBySegment({ period: selectedPeriod, source: 'playstore' }),
-          fetchStats({ period: selectedPeriod, source: 'apple' }),
-          fetchReviews({ source: 'apple', limit: 6, offset: 0 }),
-          fetchStats({ period: selectedPeriod, source: 'gmb' }),
-          fetchTopicsBySegment({ period: selectedPeriod, source: 'gmb' }),
-          fetchStats({ period: selectedPeriod }),
-          fetchTopicsBySegment({ period: selectedPeriod }),
-        ]);
-
-        setTrustpilotStats(trustStatsData);
-        setTrustpilotTopics(trustTopicsData);
-        setPlaystoreStats(androidStatsData);
-        setPlaystoreTopics(androidTopicsData);
-        setAppleStats(appleStatsData);
-        setAppleReviews(appleReviewsData);
-        setGmbStats(gmbStatsData);
-        setGmbTopics(gmbTopicsData);
-        setAllStats(allStatsData);
-        setAllTopics(allTopicsData);
-      } catch (loadError) {
-        setError(getErrorMessage(loadError, 'Impossibile caricare i dati, riprova.'));
-      } finally {
-        setLoading(false);
-      }
+  // Derived date params
+  const { fromDate, toDate, periodLabel } = useMemo(() => {
+    if (periodMode === 'month') {
+      const last = lastDayOfMonth(selYear, selMonth);
+      const from = isoDate(selYear, selMonth, 1);
+      const to   = isoDate(selYear, selMonth, last);
+      return { fromDate: from, toDate: to, periodLabel: `${selYear}-${pad2(selMonth)}` };
     }
+    return { fromDate: rangeFrom, toDate: rangeTo, periodLabel: `${rangeFrom}_${rangeTo}` };
+  }, [periodMode, selYear, selMonth, rangeFrom, rangeTo]);
 
-    loadAnalytics();
-  }, [selectedPeriod]);
+  const channelLabel = CHANNELS.find(c => c.value === channel)?.label?.replace(' ', '') || 'Tutti';
 
-  if (loading) return <LoadingState label="Sto preparando l'andamento recensioni..." />;
-  if (error)   return <ErrorState message={error} onRetry={() => window.location.reload()} />;
+  // Years range for dropdown
+  const years = [];
+  for (let y = 2024; y <= now.getFullYear() + 1; y++) years.push(y);
 
-  const appleStars = getStarDistribution(appleStats).map((item) => ({
+  // Fetch
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const params = { from_date: fromDate, to_date: toDate, ...(channel ? { source: channel } : {}) };
+      const [statsData, topicsData, appleData] = await Promise.all([
+        fetchStats(params),
+        fetchTopicsBySegment(params),
+        channel === '' || channel === 'apple'
+          ? fetchReviews({ source: 'apple', limit: 6, offset: 0 })
+          : Promise.resolve(null),
+      ]);
+      setStats(statsData);
+      setTopics(topicsData);
+      setAppleReviews(appleData);
+    } catch (err) {
+      setError(getErrorMessage(err, 'Impossibile caricare i dati, riprova.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [fromDate, toDate, channel]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // PDF generation
+  const handlePdf = async () => {
+    if (!analyticsRef.current) return;
+    setPdfLoading(true);
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas'),
+      ]);
+      const canvas = await html2canvas(analyticsRef.current, { scale: 2, useCORS: true });
+      const pdf  = new jsPDF('landscape', 'mm', 'a4');
+      const w    = pdf.internal.pageSize.getWidth();
+      const h    = (canvas.height * w) / canvas.width;
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
+      pdf.save(`Analytics_ParkingMyCar_${periodLabel}_${channelLabel}.pdf`);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
+  const appleStars = getStarDistribution(channel === 'apple' ? stats : null).map((item) => ({
     ...item,
     color: item.stars >= 4 ? '#0EA5E9' : item.stars === 3 ? '#F59E0B' : '#6366F1',
   }));
 
+  const isAppleOnly = channel === 'apple';
+
+  // ── render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="space-y-6">
-      <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-brand-600">Analytics</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-ink">
-          Andamento recensioni per fonte
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-neutral-500">
-          Trustpilot, Android Play Store e iOS App Store sono operativi. Google My Business è integrato, import in corso.
-        </p>
-      </section>
 
-      <section className="rounded-[24px] border border-neutral-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key)}
-              className={[
-                'rounded-full px-4 py-2.5 text-sm font-semibold transition',
-                activeTab === tab.key
-                  ? 'bg-ink text-white shadow-sm'
-                  : 'bg-neutral-50 text-neutral-600 hover:bg-brand-50 hover:text-brand-700',
-              ].join(' ')}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Tutte le fonti */}
-      {activeTab === 'all' ? (
-        <AnalyticsReport
-          stats={allStats}
-          topicsBySegment={allTopics}
-          selectedPeriod={selectedPeriod}
-          onPeriodChange={setSelectedPeriod}
-        />
-      ) : null}
-
-      {/* Trustpilot */}
-      {activeTab === 'trustpilot' ? (
-        <AnalyticsReport
-          stats={trustpilotStats}
-          topicsBySegment={trustpilotTopics}
-          selectedPeriod={selectedPeriod}
-          onPeriodChange={setSelectedPeriod}
-        />
-      ) : null}
-
-      {/* Android Play Store */}
-      {activeTab === 'playstore' ? (
-        <AnalyticsReport
-          stats={playstoreStats}
-          topicsBySegment={playstoreTopics}
-          selectedPeriod={selectedPeriod}
-          onPeriodChange={setSelectedPeriod}
-        />
-      ) : null}
-
-      {/* iOS App Store */}
-      {activeTab === 'apple' ? (
-        <div className="space-y-6">
-          <section className="rounded-[24px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">iOS App Store</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Distribuzione stelle</h2>
-                <p className="mt-2 text-sm leading-6 text-neutral-500">
-                  Vista sintetica delle recensioni iOS. L'analisi topic non è disponibile su questa fonte.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {[
-                  { value: 'month',   label: 'Ultimo mese' },
-                  { value: '3months', label: 'Ultimi 3 mesi' },
-                  { value: 'all',     label: 'Tutto' },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setSelectedPeriod(option.value)}
-                    className={[
-                      'rounded-full border px-4 py-2 text-sm font-semibold transition',
-                      selectedPeriod === option.value
-                        ? 'border-sky-700 bg-sky-700 text-white'
-                        : 'border-neutral-200 bg-white text-neutral-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800',
-                    ].join(' ')}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-              <div className="rounded-[18px] border border-sky-100 bg-[linear-gradient(135deg,_#e0f2fe_0%,_#ffffff_100%)] p-5 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Panoramica</p>
-                <p className="mt-3 text-4xl font-semibold text-ink">{appleStats?.total_reviews || 0}</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-600">
-                  Recensioni iOS incluse nel periodo selezionato.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Stelle</p>
-                <h3 className="mt-2 text-lg font-semibold text-ink">Distribuzione da 1 a 5</h3>
-                <div className="mt-5">
-                  <HorizontalBarChart
-                    items={appleStars}
-                    emptyLabel="Nessuna recensione iOS disponibile nel periodo selezionato."
-                  />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-5 py-4 text-sm text-neutral-500">
-            ℹ️ L'analisi topic non è disponibile per le recensioni iOS App Store — Apple non espone API per pubblicare risposte, quindi l'AI non viene applicata su questa fonte.
+      {/* ── Header + filter bar ─────────────────────────────────────────── */}
+      <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6 print:hidden">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.18em] text-brand-600">Analytics</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-ink">
+              Andamento recensioni
+            </h1>
           </div>
 
-          <section className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Recensioni recenti</p>
-                <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Ultime recensioni iOS</h3>
+          {/* PDF button */}
+          <button
+            type="button"
+            onClick={handlePdf}
+            disabled={pdfLoading || loading}
+            className="self-start rounded-full px-5 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
+            style={{ backgroundColor: '#ff8300' }}
+          >
+            {pdfLoading ? 'Generazione…' : '⬇ Scarica PDF'}
+          </button>
+        </div>
+
+        {/* Filter row */}
+        <div className="mt-5 flex flex-wrap items-end gap-4">
+
+          {/* Period mode toggle */}
+          <div className="flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1">
+            {[{ v: 'month', l: 'Mese' }, { v: 'range', l: 'Intervallo' }].map(({ v, l }) => (
+              <button
+                key={v} type="button"
+                onClick={() => setPeriodMode(v)}
+                className={[
+                  'rounded-full px-3 py-1 text-sm font-semibold transition',
+                  periodMode === v ? 'bg-white text-ink shadow-sm' : 'text-neutral-500 hover:text-ink',
+                ].join(' ')}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+
+          {/* Month pickers */}
+          {periodMode === 'month' && (
+            <>
+              <select
+                value={selYear}
+                onChange={e => setSelYear(Number(e.target.value))}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
+              >
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <select
+                value={selMonth}
+                onChange={e => setSelMonth(Number(e.target.value))}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
+              >
+                {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+              </select>
+            </>
+          )}
+
+          {/* Date range pickers */}
+          {periodMode === 'range' && (
+            <>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-neutral-500">Dal</label>
+                <input
+                  type="date" value={rangeFrom}
+                  max={rangeTo}
+                  onChange={e => setRangeFrom(e.target.value)}
+                  className="rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700 outline-none focus:border-brand-400"
+                />
               </div>
-              <p className="text-sm text-neutral-500">{appleReviews?.totale || 0} recensioni iOS totali</p>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-neutral-500">Al</label>
+                <input
+                  type="date" value={rangeTo}
+                  min={rangeFrom}
+                  onChange={e => setRangeTo(e.target.value)}
+                  className="rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700 outline-none focus:border-brand-400"
+                />
+              </div>
+            </>
+          )}
+
+          {/* Channel selector */}
+          <select
+            value={channel}
+            onChange={e => setChannel(e.target.value)}
+            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
+          >
+            {CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+          </select>
+        </div>
+      </section>
+
+      {/* ── Content ──────────────────────────────────────────────────────── */}
+      <div ref={analyticsRef}>
+        {loading ? (
+          <LoadingState label="Sto caricando i dati…" />
+        ) : error ? (
+          <ErrorState message={error} onRetry={load} />
+        ) : isAppleOnly ? (
+          /* Apple-only view: no AI topics */
+          <div className="space-y-6">
+            <section className="rounded-[24px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">iOS App Store</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Distribuzione stelle</h2>
+              <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="rounded-[18px] border border-sky-100 bg-[linear-gradient(135deg,_#e0f2fe_0%,_#ffffff_100%)] p-5 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Totale</p>
+                  <p className="mt-3 text-4xl font-semibold text-ink">{stats?.total_reviews || 0}</p>
+                </div>
+                <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Stelle</p>
+                  <div className="mt-4">
+                    <HorizontalBarChart items={appleStars} emptyLabel="Nessuna recensione iOS nel periodo." />
+                  </div>
+                </div>
+              </div>
+            </section>
+            <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-5 py-4 text-sm text-neutral-500">
+              ℹ️ L'analisi topic non è disponibile per iOS App Store: Apple non espone API per pubblicare risposte, quindi l'AI non viene applicata.
             </div>
             {appleReviews?.recensioni?.length ? (
-              appleReviews.recensioni.map((review) => (
-                <ReviewRow key={review.id} review={review} compact />
-              ))
-            ) : (
-              <div className="rounded-[16px] border border-dashed border-neutral-200 bg-white px-5 py-12 text-center shadow-sm">
-                <p className="text-base font-semibold text-ink">Nessuna recensione iOS trovata</p>
-                <p className="mt-2 text-sm text-neutral-500">
-                  Prova a cambiare il periodo o verifica che il canale App Store sia attivo.
-                </p>
-              </div>
-            )}
-          </section>
-        </div>
-      ) : null}
-
-      {/* Google My Business */}
-      {activeTab === 'google' ? (
-        gmbStats?.total_reviews > 0 ? (
-          <AnalyticsReport
-            stats={gmbStats}
-            topicsBySegment={gmbTopics}
-            selectedPeriod={selectedPeriod}
-            onPeriodChange={setSelectedPeriod}
-          />
+              <section className="space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Ultime recensioni iOS</p>
+                {appleReviews.recensioni.map(r => <ReviewRow key={r.id} review={r} compact />)}
+              </section>
+            ) : null}
+          </div>
         ) : (
-          <section className="rounded-[24px] border border-neutral-200 bg-white p-6 shadow-sm">
-            <div className="rounded-[20px] border bg-[linear-gradient(135deg,_#eff6ff_0%,_#ffffff_55%,_#f8fafc_100%)] border-sky-100 p-8 sm:p-10">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-neutral-500">Integrazione</p>
-              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-ink">Google My Business — import in corso</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-neutral-600">
-                L'integrazione GMB è attiva: il sistema recupera automaticamente le recensioni di tutte le sedi. I dati appariranno qui non appena l'import iniziale sarà completato.
-              </p>
-            </div>
-          </section>
-        )
-      ) : null}
+          /* All other channels: full AnalyticsReport */
+          <AnalyticsReport
+            stats={stats}
+            topicsBySegment={topics}
+            selectedPeriod={null}
+            onPeriodChange={null}
+          />
+        )}
+      </div>
     </div>
   );
 }
