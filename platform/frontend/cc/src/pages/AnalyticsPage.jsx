@@ -53,6 +53,11 @@ export default function AnalyticsPage() {
   // Channel
   const [channel, setChannel] = useState('');
 
+  // BO filters (client-side display + API where supported)
+  const [filterSegmento,    setFilterSegmento]    = useState('');   // '' | airport | port | city | station
+  const [filterEnrichment,  setFilterEnrichment]  = useState('');   // '' | matched | pending_sync | organic_or_non_trustpilot
+  const [soloConBO,         setSoloConBO]         = useState(false);
+
   // Data
   const [stats,  setStats]  = useState(null);
   const [topics, setTopics] = useState(null);
@@ -228,6 +233,48 @@ export default function AnalyticsPage() {
           >
             {CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
+
+          {/* Segmento filter */}
+          <select
+            value={filterSegmento}
+            onChange={e => setFilterSegmento(e.target.value)}
+            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
+          >
+            <option value="">Tutti i segmenti</option>
+            <option value="airport">Airport</option>
+            <option value="port">Port</option>
+            <option value="city">City</option>
+            <option value="station">Station</option>
+          </select>
+
+          {/* Enrichment status filter */}
+          <select
+            value={soloConBO ? 'matched' : filterEnrichment}
+            onChange={e => {
+              setSoloConBO(false);
+              setFilterEnrichment(e.target.value);
+            }}
+            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
+          >
+            <option value="">Tutti gli stati BO</option>
+            <option value="matched">Con BO (matched)</option>
+            <option value="pending_sync">In sync (pending)</option>
+            <option value="organic_or_non_trustpilot">Organiche</option>
+          </select>
+
+          {/* Solo con BO toggle */}
+          <button
+            type="button"
+            onClick={() => { setSoloConBO(v => !v); setFilterEnrichment(''); }}
+            className={[
+              'rounded-full border px-4 py-2.5 text-sm font-semibold transition',
+              soloConBO
+                ? 'border-brand-600 bg-brand-600 text-white'
+                : 'border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700',
+            ].join(' ')}
+          >
+            Solo con BO
+          </button>
         </div>
       </section>
 
@@ -273,6 +320,8 @@ export default function AnalyticsPage() {
             topicsBySegment={topics}
             selectedPeriod={null}
             onPeriodChange={null}
+            filterSegmento={filterSegmento}
+            filterEnrichment={soloConBO ? 'matched' : filterEnrichment}
           />
         )}
       </div>

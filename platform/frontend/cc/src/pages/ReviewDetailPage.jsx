@@ -11,6 +11,7 @@ import {
   regenerateReview,
 } from '../lib/api';
 import { formatDate } from '../lib/utils';
+import { getSegmentoConfig, isMatched as checkIsMatched } from '../utils/enrichment-config';
 
 function InfoCard({ label, value, icon, subtle = false }) {
   return (
@@ -67,9 +68,18 @@ export default function ReviewDetailPage() {
   const [regenerateLoading, setRegenerateLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
-  const isApple = review?.source === 'apple' || review?.source === 'apple_store';
+  const isApple   = review?.source === 'apple' || review?.source === 'apple_store';
+  const segCfg    = getSegmentoConfig(review?.segmento);
+  const isMatched = checkIsMatched(review);
   const hasGeneratedResponse = Boolean(review?.risposta_generata);
   const canPublish = responseText.trim().length >= 10;
+
+  function formatBookingDateIT(value) {
+    if (!value) return null;
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return null;
+    return new Intl.DateTimeFormat('it-IT', { dateStyle: 'long' }).format(d);
+  }
 
   useEffect(() => {
     async function loadReview() {
@@ -221,7 +231,16 @@ export default function ReviewDetailPage() {
               <Stars value={review.stelle} />
               <SourceBadge source={review.source} />
               <StatusBadge status={review.stato} />
-              <SegmentBadge segment={review.segmento} />
+              {review.enrichment_status === 'pending_sync' && (
+                <span title="Prenotazione in attesa di sincronizzazione dal BO" className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                  BO in sync
+                </span>
+              )}
+              {review.enrichment_status === 'organic_or_non_trustpilot' && review.source === 'trustpilot' && (
+                <span title="Recensione senza codice prenotazione collegato" className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500 ring-1 ring-inset ring-neutral-200">
+                  Organica
+                </span>
+              )}
             </div>
 
             <div className="mt-5 rounded-[16px] bg-neutral-50 p-5">
@@ -237,6 +256,32 @@ export default function ReviewDetailPage() {
                 <span className="text-sm text-neutral-400">Topic non disponibili</span>
               )}
             </div>
+
+            {/* Badge informativi BO — solo se matched */}
+            {isMatched && (segCfg || review.prima_prenotazione || review.cross || review.booking_date) && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {segCfg && (
+                  <span title={review.localita || segCfg.label} className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${segCfg.cls}`}>
+                    {review.localita ? `${segCfg.label} · ${review.localita}` : segCfg.label}
+                  </span>
+                )}
+                {review.booking_date && (
+                  <span className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-600 ring-1 ring-inset ring-neutral-200">
+                    Prenotato il {formatBookingDateIT(review.booking_date)}
+                  </span>
+                )}
+                {review.prima_prenotazione && (
+                  <span title="Prima prenotazione di questo utente con ParkingMyCar" className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                    Prima prenotazione
+                  </span>
+                )}
+                {review.cross && (
+                  <span title="Utente che ha provato segmenti diversi" className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+                    Cross-segmento
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

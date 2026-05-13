@@ -48,6 +48,8 @@ export default function AnalyticsReport({
   topicsBySegment,
   selectedPeriod,
   onPeriodChange,
+  filterSegmento = '',
+  filterEnrichment = '',
 }) {
   const segmentCounts = new Map((stats?.per_segment || []).map((item) => [item.segmento, item.count]));
   const totalReviews = stats?.total_reviews || 0;
@@ -111,9 +113,63 @@ export default function AnalyticsReport({
       }
       contentClassName="space-y-6"
     >
-      <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-5 py-4 text-sm text-neutral-500">
-        Dati cross-selling, prima prenotazione e distribuzione per segmento non disponibili — integrazione backoffice in corso.
-      </div>
+      {/* ── Insight BO ── */}
+      {(() => {
+        const perSeg     = stats?.per_segment || [];
+        const total      = stats?.total_reviews || 0;
+        const crossN     = stats?.cross_users || 0;
+        const primaN     = stats?.prima_prenotazione || 0;
+        const hasBoData  = perSeg.some(s => s.count > 0);
+
+        // Filtra segmento se selezionato
+        const segRows = filterSegmento
+          ? perSeg.filter(s => s.segmento === filterSegmento)
+          : perSeg;
+
+        if (!hasBoData) return (
+          <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-5 py-4 text-sm text-neutral-500">
+            Dati BO non ancora disponibili — in attesa del backfill delle recensioni.
+          </div>
+        );
+
+        const SEG_LABELS = { airport: 'Airport', port: 'Port', city: 'City', station: 'Station' };
+
+        return (
+          <div className="rounded-[16px] border border-neutral-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-600">Insight BO</p>
+            <h4 className="mt-2 text-xl font-semibold text-ink">Dati prenotazione</h4>
+            <p className="mt-1 text-sm text-neutral-500">Calcolati sulle recensioni con dati BO (matched).</p>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {/* Distribuzione segmenti */}
+              {segRows.map(s => (
+                <div key={s.segmento} className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">{SEG_LABELS[s.segmento] || s.segmento}</p>
+                  <p className="mt-2 text-2xl font-semibold text-ink">{s.count}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{total > 0 ? `${((s.count / total) * 100).toFixed(1)}%` : '—'}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Cross-segmento</p>
+                <p className="mt-2 text-2xl font-semibold text-ink">{crossN}</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {total > 0 ? `${((crossN / total) * 100).toFixed(1)}% sul totale` : '—'}
+                </p>
+              </div>
+              <div className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-400">Prima prenotazione</p>
+                <p className="mt-2 text-2xl font-semibold text-ink">{primaN}</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {total > 0 ? `${((primaN / total) * 100).toFixed(1)}% sul totale` : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="rounded-[16px] border border-neutral-200 bg-white p-5 shadow-sm">

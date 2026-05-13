@@ -4,6 +4,7 @@ import { SegmentBadge, SourceBadge, StatusBadge, TopicBadge } from './Badge';
 import Stars from './Stars';
 import { approveReview, fetchReview, getErrorMessage, regenerateReview } from '../lib/api';
 import { formatDate, getVisibleTopics, truncateText } from '../lib/utils';
+import { getSegmentoConfig, isMatched as checkMatched } from '../utils/enrichment-config';
 
 export default function ReviewRow({ review: initialReview, compact = false, onUpdate }) {
   const navigate = useNavigate();
@@ -25,6 +26,9 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
   const hasResponse = Boolean(responseText.trim());
   const canPublish = hasResponse && responseText.trim().length >= 10 && review.stato !== 'published';
   const isLoading = approveLoading || regenerateLoading;
+
+  const segCfg    = getSegmentoConfig(review.segmento);
+  const isMatched = checkMatched(review);
 
   function applyUpdate(updates) {
     const next = { ...review, ...updates };
@@ -138,6 +142,17 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
                 Solo monitoraggio
               </span>
             )}
+            {/* Badge stato enrichment BO */}
+            {review.enrichment_status === 'pending_sync' && (
+              <span title="Prenotazione in attesa di sincronizzazione dal BO" className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                BO in sync
+              </span>
+            )}
+            {review.enrichment_status === 'organic_or_non_trustpilot' && review.source === 'trustpilot' && (
+              <span title="Recensione senza codice prenotazione collegato" className="inline-flex items-center rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500 ring-1 ring-inset ring-neutral-200">
+                Organica
+              </span>
+            )}
           </div>
         </div>
 
@@ -164,6 +179,30 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
             <span className="text-sm text-neutral-400">Topic non disponibili</span>
           )}
         </div>
+
+        {/* Badge informativi BO — visibili solo se enrichment_status='matched' */}
+        {isMatched && (segCfg || review.prima_prenotazione || review.cross) && (
+          <div className="flex flex-wrap gap-2">
+            {segCfg && (
+              <span
+                title={review.localita || segCfg.label}
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${segCfg.cls}`}
+              >
+                {review.localita ? `${segCfg.label} · ${review.localita}` : segCfg.label}
+              </span>
+            )}
+            {review.prima_prenotazione && (
+              <span title="Prima prenotazione di questo utente con ParkingMyCar" className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                Prima prenotazione
+              </span>
+            )}
+            {review.cross && (
+              <span title="Utente che ha provato segmenti diversi" className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-200">
+                Cross-segmento
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Risposta AI + bottoni — nascosti per Apple (l'API non supporta reply) */}
         {!isApple && (
