@@ -12,6 +12,7 @@ require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') }
 const axios  = require('axios');
 const fs     = require('fs');
 const path   = require('path');
+const Papa   = require('papaparse');
 const { createClient } = require('@supabase/supabase-js');
 const { sendTelegramAlert, flushTelegramBuffer } = require('./lib/telegram-alert');
 
@@ -33,32 +34,16 @@ const sleep    = ms => new Promise(r => setTimeout(r, ms));
 // ── CSV parser ────────────────────────────────────────────────────────────────
 
 function parseCSV(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) return [];
-  const rawHeaders = lines[0].replace(/^﻿/, '');
-  const headers = rawHeaders.split(',').map(h => h.trim());
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    const vals = parseLine(lines[i]);
-    if (vals.length !== headers.length) continue;
-    rows.push(Object.fromEntries(headers.map((h, j) => [h, vals[j] ?? ''])));
-  }
-  return rows;
-}
-
-function parseLine(line) {
-  const result = []; let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
-      else inQ = !inQ;
-    } else if (ch === ',' && !inQ) {
-      result.push(cur.trim()); cur = '';
-    } else { cur += ch; }
-  }
-  result.push(cur.trim());
-  return result;
+  const { data, errors } = Papa.parse(text.replace(/^﻿/, ''), {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: h => h.trim(),
+    transform: v => v.trim(),
+  });
+  errors.forEach(e =>
+    console.warn(`[parser] riga scartata (row ${e.row}, ${e.code}): ${e.message}`)
+  );
+  return data;
 }
 
 // ── CSV → bo_bookings row ─────────────────────────────────────────────────────
@@ -261,7 +246,8 @@ async function run() {
   console.log(`───────────────────────────────────────────────────\n`);
 }
 
-run().catch(err => { console.error('[fatal]', err.message); process.exit(1); });
+if (require.main === module) {
+  run().catch(err => { console.error('[fatal]', err.message); process.exit(1); });
+}
 
-// Esporta fetchWithFallback per il cron notturno in agent-api.js
 module.exports = { fetchWithFallback, fetchRange, splitRange };

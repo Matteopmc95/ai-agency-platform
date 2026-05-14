@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
+const Papa  = require('papaparse');
 const { processaRecensione } = require('./agent-reviews');
 const { avviaPollingPlayStore, rispondiPlayStore, fetchReviewsSince } = require('./sources/play-store');
 const { avviaPollingApple } = require('./sources/apple-store');
@@ -1655,14 +1656,14 @@ app.listen(PORT, () => {
 
 let _boSyncLastDate = null; // YYYY-MM-DD — evita doppia esecuzione nella stessa notte
 
-async function syncBOForDate(dateStr) {
+async function syncBOForDate(startDate, endDate = startDate) {
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
   let csvText;
   for (let t = 1; t <= 3; t++) {
     try {
       const { data } = await axios.get(`${process.env.BO_API_BASE}/reporting/marketing/booking-details`, {
         headers: { Authorization: `Basic ${auth}`, Accept: 'text/csv' },
-        params: { start_date: dateStr, end_date: dateStr },
+        params: { start_date: startDate, end_date: endDate },
         timeout: 60000, responseType: 'text',
       });
       csvText = data;
@@ -1673,26 +1674,16 @@ async function syncBOForDate(dateStr) {
     }
   }
 
-  function parseLine(line) {
-    const result = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
-      else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
-      else cur += ch;
-    }
-    result.push(cur.trim()); return result;
-  }
+  const { data: parsed, errors } = Papa.parse(csvText.replace(/^﻿/, ''), {
+    header: true, skipEmptyLines: true,
+    transformHeader: h => h.trim(), transform: v => v.trim(),
+  });
+  errors.forEach(e => console.warn(`[BO SYNC] parser warn (row ${e.row}, ${e.code}): ${e.message}`));
 
-  const lines   = csvText.split('\n').map(l => l.trim()).filter(Boolean);
-  const headers = lines[0].replace(/^﻿/, '').split(',').map(h => h.trim());
-  const toTs    = v => { if (!v?.trim()) return null; const d = new Date(v.trim().replace(' ','T')+'Z'); return isNaN(d.getTime()) ? null : d.toISOString(); };
-  const toNum   = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+  const toTs  = v => { if (!v?.trim()) return null; const d = new Date(v.trim().replace(' ','T')+'Z'); return isNaN(d.getTime()) ? null : d.toISOString(); };
+  const toNum = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
 
-  const rows = lines.slice(1).map(line => {
-    const vals = parseLine(line);
-    if (vals.length !== headers.length) return null;
-    const r = Object.fromEntries(headers.map((h, i) => [h, vals[i] ?? '']));
+  const rows = parsed.map(r => {
     const tid = (r.transaction_id || '').trim();
     if (!tid) return null;
     return {
@@ -1725,15 +1716,17 @@ function startBOSync() {
     if (romeHour !== 3 || romeMin >= 5 || _boSyncLastDate === today) return;
 
     _boSyncLastDate = today;
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
     try {
-      const n = await syncBOForDate(yesterday);
-      await log('agent-api', 'bo_sync_completato', { date: yesterday, righe: n });
-      console.log(`[BO SYNC] ${n} righe sincronizzate per data ${yesterday}`);
+      const n1 = await syncBOForDate(yesterday);
+      const n2 = await syncBOForDate(today);
+      const n  = n1 + n2;
+      await log('agent-api', 'bo_sync_completato', { dates: `${yesterday}+${today}`, righe: n });
+      console.log(`[BO SYNC] ${n} righe sincronizzate (${yesterday} + ${today})`);
       // Nessun alert Telegram su successo — solo log
     } catch (err) {
-      await log('agent-api', 'bo_sync_errore', { date: yesterday, errore: err.message });
-      console.error(`[BO SYNC] Errore per ${yesterday}: ${err.message}`);
+      await log('agent-api', 'bo_sync_errore', { dates: `${yesterday}+${today}`, errore: err.message });
+      console.error(`[BO SYNC] Errore per ${yesterday}+${today}: ${err.message}`);
       // Alert Telegram su fallimento totale (graceful, non blocca)
       try {
         const https = require('https');
