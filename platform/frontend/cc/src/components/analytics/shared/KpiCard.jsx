@@ -1,7 +1,7 @@
 import { forwardRef } from 'react';
 
 const KpiCard = forwardRef(function KpiCard(
-  { label, value, subtitle, delta, deltaLabel, loading = false, className = '' },
+  { label, value, subtitle, delta, deltaLabel, loading = false, className = '', valueClassName = 'text-4xl' },
   ref
 ) {
   const deltaPositive = delta > 0;
@@ -23,7 +23,7 @@ const KpiCard = forwardRef(function KpiCard(
         </div>
       ) : (
         <>
-          <p className="mt-2 text-4xl font-semibold tracking-tight text-ink">{value ?? '—'}</p>
+          <p className={['mt-2 font-semibold tracking-tight text-ink', valueClassName].join(' ')}>{value ?? '—'}</p>
           <div className="mt-1 flex items-center gap-2">
             {subtitle && (
               <p className="text-xs text-neutral-500">{subtitle}</p>

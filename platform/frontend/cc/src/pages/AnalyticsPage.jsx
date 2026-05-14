@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { fetchReviews, getErrorMessage } from '../lib/api';
 import FilterBar from '../components/analytics/FilterBar';
 import Sidebar from '../components/analytics/Sidebar';
+import Section1Overview from '../components/analytics/Section1Overview';
 import SkeletonLoader from '../components/analytics/shared/SkeletonLoader';
 import EmptyState from '../components/analytics/shared/EmptyState';
 
@@ -160,7 +161,16 @@ export default function AnalyticsPage() {
                 <EmptyState message="Nessuna recensione trovata con i filtri applicati." />
               )}
 
-              {SECTIONS.map(({ id, label }, i) => (
+              {/* Sezione 1 — Overview */}
+              <Section1Overview
+                ref={el => { sectionRefs.current.s1 = el; }}
+                reviews={filteredReviews}
+                allReviews={allReviews}
+                filters={filters}
+              />
+
+              {/* Sezioni 2-6 — placeholder fino alle FASI successive */}
+              {SECTIONS.slice(1).map(({ id, label }, i) => (
                 <section
                   key={id}
                   id={id}
@@ -171,12 +181,7 @@ export default function AnalyticsPage() {
                     {label}
                   </p>
                   <p className="mt-1 text-sm text-neutral-400">
-                    Fase {i + 1} — in costruzione
-                  </p>
-                  <p className="mt-3 text-2xl font-semibold text-ink">
-                    {id === 's1'
-                      ? `${filteredReviews.length.toLocaleString('it-IT')} recensioni caricate`
-                      : null}
+                    Fase {i + 2} — in costruzione
                   </p>
                 </section>
               ))}
