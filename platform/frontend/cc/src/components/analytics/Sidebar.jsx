@@ -49,7 +49,7 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function Sidebar({ activeSection, onNavigate }) {
+export default function Sidebar({ activeSection, onNavigate, exporting = false }) {
   return (
     <aside className="flex w-52 shrink-0 flex-col border-r border-neutral-200 bg-white">
       <div className="flex-1 overflow-y-auto px-3 py-4">
@@ -87,13 +87,20 @@ export default function Sidebar({ activeSection, onNavigate }) {
         <button
           type="button"
           onClick={() => onNavigate('pdf')}
-          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-100 hover:text-ink"
+          disabled={exporting}
+          className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-100 hover:text-ink disabled:opacity-60 disabled:cursor-wait"
         >
-          <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-neutral-400">
-            <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
-            <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
-          </svg>
-          <span>Esporta PDF</span>
+          {exporting ? (
+            <svg className="h-4 w-4 shrink-0 animate-spin text-brand-600" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4 31.4" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-neutral-400">
+              <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+              <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+            </svg>
+          )}
+          <span>{exporting ? 'Generazione...' : 'Esporta PDF'}</span>
         </button>
       </div>
     </aside>

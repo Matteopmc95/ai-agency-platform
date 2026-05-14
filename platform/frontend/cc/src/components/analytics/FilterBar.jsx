@@ -130,6 +130,7 @@ export default function FilterBar({ filters, onUpdate, onReset, total, filtered 
             <button
               key={s.value}
               type="button"
+              aria-pressed={on}
               onClick={() => onUpdate({ segmenti: toggleMulti(segmenti, s.value) })}
               className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${on ? s.active : s.idle}`}
             >
@@ -147,6 +148,7 @@ export default function FilterBar({ filters, onUpdate, onReset, total, filtered 
             <button
               key={s.value}
               type="button"
+              aria-pressed={on}
               onClick={() => onUpdate({ sources: toggleMulti(sources, s.value) })}
               className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${on ? s.active : s.idle}`}
             >
@@ -164,6 +166,8 @@ export default function FilterBar({ filters, onUpdate, onReset, total, filtered 
             <button
               key={n}
               type="button"
+              aria-pressed={on}
+              aria-label={`${n} stelle`}
               onClick={() => onUpdate({ stelle: toggleMulti(stelle, n) })}
               className={[
                 'rounded-full border px-2.5 py-1 text-xs font-semibold transition',

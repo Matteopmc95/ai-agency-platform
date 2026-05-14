@@ -4,8 +4,14 @@ import { fetchReviews, getErrorMessage } from '../lib/api';
 import FilterBar from '../components/analytics/FilterBar';
 import Sidebar from '../components/analytics/Sidebar';
 import Section1Overview from '../components/analytics/Section1Overview';
+import Section2Segmenti from '../components/analytics/Section2Segmenti';
+import Section3Topics from '../components/analytics/Section3Topics';
+import Section4Journey from '../components/analytics/Section4Journey';
+import Section5Tempistiche from '../components/analytics/Section5Tempistiche';
+import Section6AI from '../components/analytics/Section6AI';
 import SkeletonLoader from '../components/analytics/shared/SkeletonLoader';
 import EmptyState from '../components/analytics/shared/EmptyState';
+import { exportToPdf } from '../lib/exportPdf';
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -31,6 +37,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('s1');
+  const [exporting, setExporting] = useState(false);
   const sectionRefs = useRef({});
   const mainRef = useRef(null);
 
@@ -123,8 +130,18 @@ export default function AnalyticsPage() {
     });
   }, [allReviews, filters]);
 
+  async function handleExportPdf() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await exportToPdf({ reviews: filteredReviews, filters, sectionRefs });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function scrollTo(id) {
-    if (id === 'pdf') return; // PDF handler will be wired in FASE 7
+    if (id === 'pdf') { handleExportPdf(); return; }
     const el = sectionRefs.current[id];
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -136,7 +153,7 @@ export default function AnalyticsPage() {
       className="-mx-4 -my-4 lg:-mx-8 lg:-my-6 flex overflow-hidden"
       style={{ height: 'calc(100vh - 56px)' }}
     >
-      <Sidebar activeSection={activeSection} onNavigate={scrollTo} />
+      <Sidebar activeSection={activeSection} onNavigate={scrollTo} exporting={exporting} />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <FilterBar
@@ -169,22 +186,37 @@ export default function AnalyticsPage() {
                 filters={filters}
               />
 
-              {/* Sezioni 2-6 — placeholder fino alle FASI successive */}
-              {SECTIONS.slice(1).map(({ id, label }, i) => (
-                <section
-                  key={id}
-                  id={id}
-                  ref={el => { sectionRefs.current[id] = el; }}
-                  className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm"
-                >
-                  <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">
-                    {label}
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-400">
-                    Fase {i + 2} — in costruzione
-                  </p>
-                </section>
-              ))}
+              {/* Sezione 2 — Segmenti & Location */}
+              <Section2Segmenti
+                ref={el => { sectionRefs.current.s2 = el; }}
+                reviews={filteredReviews}
+                filters={filters}
+                onFilter={updateFilters}
+              />
+
+              {/* Sezione 3 — Topic Analysis */}
+              <Section3Topics
+                ref={el => { sectionRefs.current.s3 = el; }}
+                reviews={filteredReviews}
+              />
+
+              {/* Sezione 4 — Customer Journey */}
+              <Section4Journey
+                ref={el => { sectionRefs.current.s4 = el; }}
+                reviews={filteredReviews}
+              />
+
+              {/* Sezione 5 — Tempistiche */}
+              <Section5Tempistiche
+                ref={el => { sectionRefs.current.s5 = el; }}
+                reviews={filteredReviews}
+              />
+
+              {/* Sezione 6 — AI & Risposte */}
+              <Section6AI
+                ref={el => { sectionRefs.current.s6 = el; }}
+                reviews={filteredReviews}
+              />
             </div>
           )}
         </main>
