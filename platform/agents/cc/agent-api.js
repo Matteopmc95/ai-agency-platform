@@ -1643,10 +1643,10 @@ app.listen(PORT, () => {
   }
 
   // BO Sync notturno — attivare con BO_SYNC_ENABLED=true su Railway
-  // if (process.env.BO_SYNC_ENABLED === 'true') {
-  //   startBOSync();
-  //   console.log('[BO SYNC] Cron notturno schedulato (03:00 Europe/Rome)');
-  // }
+  if (process.env.BO_SYNC_ENABLED === 'true') {
+    startBOSync();
+    console.log('[BO SYNC] Cron notturno schedulato (03:00 Europe/Rome)');
+  }
 });
 
 // ── BO SYNC NOTTURNO ─────────────────────────────────────────────────────────

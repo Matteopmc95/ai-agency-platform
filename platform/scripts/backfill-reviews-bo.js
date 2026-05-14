@@ -68,6 +68,10 @@ async function run() {
       .from('reviews')
       .select('id, source, reference_id, testo')
       .gt('id', cursor)
+      .eq('source', 'trustpilot')
+      .not('reference_id', 'is', null)
+      .neq('reference_id', '')
+      .or('enrichment_status.is.null,enrichment_status.eq.organic_or_non_trustpilot,enrichment_status.eq.pending_sync')
       .order('id', { ascending: true })
       .limit(BATCH_SIZE);
 
