@@ -1299,6 +1299,103 @@ app.get('/admin/gmb/import-bulk/status', authMiddleware, (_req, res) => {
   res.json(gmbJobState);
 });
 
+// --- ADMIN: RECOVER TRUSTPILOT REFERENCE_IDs ---
+// POST /admin/recover-trustpilot-refids
+
+let _recoverRunning = false;
+
+app.post('/admin/recover-trustpilot-refids', authMiddleware, async (_req, res) => {
+  if (_recoverRunning) {
+    return res.status(409).json({ ok: false, status: 'already_running' });
+  }
+
+  res.status(202).json({ ok: true, status: 'started' });
+
+  _recoverRunning = true;
+  const t0 = Date.now();
+  const stats = { total: 0, recuperati: 0, non_disponibili: 0, errori: 0 };
+
+  setImmediate(async () => {
+    try {
+      const { data: reviews, error } = await supabase
+        .from('reviews')
+        .select('id, trustpilot_id')
+        .eq('source', 'trustpilot')
+        .or('reference_id.is.null,reference_id.eq.')  // NULL + stringa vuota
+        .range(0, 9999);
+
+      if (error) throw new Error(error.message);
+      stats.total = reviews.length;
+      console.log(`[recover-refid] ${reviews.length} recensioni da processare`);
+
+      // Token fuori dal loop — caching interno lo rinnova se scaduto
+      let token = await getTrustpilotAccessToken();
+
+      for (let i = 0; i < reviews.length; i++) {
+        const r = reviews[i];
+        try {
+          const { data: payload } = await axios.get(
+            `https://api.trustpilot.com/v1/private/reviews/${r.trustpilot_id}`,
+            { headers: { Authorization: `Bearer ${token}` }, timeout: 10_000 }
+          );
+          const refId = payload.referenceId || payload.referenceNumber || null;
+          if (refId) {
+            const { error: uErr } = await supabase.from('reviews')
+              .update({ reference_id: String(refId) }).eq('id', r.id);
+            uErr ? stats.errori++ : stats.recuperati++;
+          } else {
+            stats.non_disponibili++;
+          }
+        } catch (err) {
+          // Retry su 401: invalida cache e rinnova token, riprova una volta
+          if (err.response?.status === 401) {
+            try {
+              _tpTokenCache = null;
+              token = await getTrustpilotAccessToken();
+              const { data: payload } = await axios.get(
+                `https://api.trustpilot.com/v1/private/reviews/${r.trustpilot_id}`,
+                { headers: { Authorization: `Bearer ${token}` }, timeout: 10_000 }
+              );
+              const refId = payload.referenceId || payload.referenceNumber || null;
+              if (refId) {
+                const { error: uErr } = await supabase.from('reviews')
+                  .update({ reference_id: String(refId) }).eq('id', r.id);
+                uErr ? stats.errori++ : stats.recuperati++;
+              } else { stats.non_disponibili++; }
+              if (i < reviews.length - 1) await new Promise(r => setTimeout(r, 500));
+              continue;
+            } catch (_) {}
+          }
+          console.error(`[recover-refid] ${r.trustpilot_id}: ${err.message}`);
+          stats.errori++;
+        }
+        if (i < reviews.length - 1) await new Promise(r => setTimeout(r, 500));
+      }
+
+      const durMin = Math.round((Date.now() - t0) / 60_000);
+      await log('agent-api', 'recover_refid_completato', stats);
+      console.log(`[recover-refid] completato:`, JSON.stringify(stats));
+
+      try {
+        const https = require('https');
+        const tok = process.env.TELEGRAM_BOT_TOKEN;
+        const cid = process.env.TELEGRAM_ALERT_CHAT_ID;
+        if (tok && cid) {
+          const text = `✅ <b>Recovery Trustpilot completato</b>\nTotale processati: ${stats.total}\nRecuperati: ${stats.recuperati}\nNon disponibili: ${stats.non_disponibili}\nErrori: ${stats.errori}\nDurata: ${durMin} min`;
+          const body = JSON.stringify({ chat_id: cid, parse_mode: 'HTML', text });
+          const req = https.request({ hostname: 'api.telegram.org', path: `/bot${tok}/sendMessage`,
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 }, () => {});
+          req.on('error', () => {}); req.write(body); req.end();
+        }
+      } catch (_) {}
+    } catch (err) {
+      console.error('[recover-refid] errore fatale:', err.message);
+    } finally {
+      _recoverRunning = false;
+    }
+  });
+});
+
 // --- LOGS ---
 // GET /logs?agent=&limit=&offset=
 app.get('/logs', async (req, res) => {
