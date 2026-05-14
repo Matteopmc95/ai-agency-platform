@@ -1,6 +1,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { createClient } = require('@supabase/supabase-js');
 const { boLookup } = require('./utils/bo-lookup');
+const { calculateUserHistory } = require('./utils/user-history-lookup');
 
 console.log('[anthropic] key loaded:', process.env.ANTHROPIC_API_KEY ? 'YES (' + process.env.ANTHROPIC_API_KEY.substring(0, 10) + '...)' : 'NO');
 
@@ -232,6 +233,10 @@ async function processaRecensione(_trustpilot_id, testo, autore = '', metadata =
     enrichmentStatus = 'organic_or_non_trustpilot';
   }
 
+  const historyData = boData
+    ? await calculateUserHistory({ reference_id: String(referenceId), supabase, currentBooking: boData }).catch(() => null)
+    : null;
+
   const { correzioni } = await fetchRisposteApprovate();
 
   const analisi = await analizzaRecensione(testo, correzioni);
@@ -256,6 +261,7 @@ async function processaRecensione(_trustpilot_id, testo, autore = '', metadata =
     flag_cross:         boData?.cross ? 1 : 0,
     tipo_risposta,
     enrichment_status:  enrichmentStatus,
+    _historyData:       historyData,
   };
 }
 

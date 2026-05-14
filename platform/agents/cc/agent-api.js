@@ -172,6 +172,7 @@ async function salvaAnalisi(review_id, analisi) {
     flag_cross: Boolean(analisi.flag_cross),
     tipo_risposta: analisi.tipo_risposta || null,
     created_at: new Date().toISOString(),
+    ...(analisi._historyData || {}),
   };
 
   const { error: raError } = await supabase

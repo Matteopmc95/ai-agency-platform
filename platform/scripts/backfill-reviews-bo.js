@@ -18,6 +18,7 @@ const fs   = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const { boLookupBatch, cacheStats } = require('../agents/cc/utils/bo-lookup');
+const { calculateUserHistory, getCacheStats: historyCacheStats } = require('../agents/cc/utils/user-history-lookup');
 const { sendTelegramAlert } = require('./lib/telegram-alert');
 
 const DRY_RUN    = process.env.DRY_RUN === 'true';
@@ -111,6 +112,7 @@ async function run() {
           booking_date:     boData.transaction_date || null,
           // segmento, localita, prima_prenotazione, cross → vanno su review_analysis, non su reviews
           _boData:          boData,  // trasportato per l'upsert review_analysis
+          _refId:           refId,
         });
         stats.matched++;
       } else {
@@ -123,12 +125,18 @@ async function run() {
 
     if (!DRY_RUN) {
       for (const payload of toUpdate) {
-        const { id, _boData, ...reviewFields } = payload;
+        const { id, _boData, _refId, ...reviewFields } = payload;
         const { error: uErr } = await supabase.from('reviews').update(reviewFields).eq('id', id);
         if (uErr) { console.error(`[update] Errore review_id=${id}: ${uErr.message}`); stats.errors++; continue; }
 
-        // Per i matched: upsert su review_analysis con i campi BO
+        // Per i matched: upsert su review_analysis con i campi BO + storia utente
         if (_boData) {
+          const historyData = await calculateUserHistory({
+            reference_id:   _refId,
+            supabase,
+            currentBooking: _boData,
+          });
+
           const { error: raErr } = await supabase.from('review_analysis').upsert({
             review_id:          id,
             segmento:           _boData.segmento           || null,
@@ -137,6 +145,7 @@ async function run() {
             prima_prenotazione: Boolean(_boData.prima_prenotazione),
             cross:              Boolean(_boData.cross),
             flag_cross:         Boolean(_boData.cross),
+            ...(historyData || {}),
           }, { onConflict: 'review_id', ignoreDuplicates: false });
           if (raErr) console.error(`[upsert-ra] review_id=${id}: ${raErr.message}`);
         }
@@ -169,7 +178,8 @@ async function run() {
   console.log(`  organic_or_non_tp:       ${stats.organic} (${orgPct}%)`);
   console.log(`  errori:                  ${stats.errors}`);
   console.log(`  durata:                  ${durMin} min`);
-  console.log(`  cache: ${JSON.stringify(cacheStats())}`);
+  console.log(`  cache bo:   ${JSON.stringify(cacheStats())}`);
+  console.log(`  cache hist: ${JSON.stringify(historyCacheStats())}`);
   console.log(`───────────────────────────────────────────────────\n`);
 
   if (!DRY_RUN) {
