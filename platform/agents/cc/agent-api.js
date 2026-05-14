@@ -1304,7 +1304,7 @@ app.get('/admin/gmb/import-bulk/status', authMiddleware, (_req, res) => {
 
 let _recoverRunning = false;
 
-app.post('/admin/recover-trustpilot-refids', authMiddleware, async (_req, res) => {
+app.post('/admin/recover-trustpilot-refids', async (_req, res) => {
   if (_recoverRunning) {
     return res.status(409).json({ ok: false, status: 'already_running' });
   }
