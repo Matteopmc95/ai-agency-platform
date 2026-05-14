@@ -1,329 +1,188 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import AnalyticsReport from '../components/AnalyticsReport';
-import ErrorState from '../components/ErrorState';
-import LoadingState from '../components/LoadingState';
-import ReviewRow from '../components/ReviewRow';
-import { HorizontalBarChart } from '../components/Charts';
-import { fetchReviews, fetchStats, fetchTopicsBySegment, getErrorMessage } from '../lib/api';
-import { getStarDistribution } from '../lib/utils';
+import { useSearchParams } from 'react-router-dom';
+import { fetchReviews, getErrorMessage } from '../lib/api';
+import FilterBar from '../components/analytics/FilterBar';
+import Sidebar from '../components/analytics/Sidebar';
+import SkeletonLoader from '../components/analytics/shared/SkeletonLoader';
+import EmptyState from '../components/analytics/shared/EmptyState';
 
-// ── helpers ────────────────────────────────────────────────────────────────
-
-const MONTHS = [
-  'Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
-  'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre',
-];
-
-const CHANNELS = [
-  { value: '',           label: 'Tutti i canali' },
-  { value: 'trustpilot', label: 'Trustpilot' },
-  { value: 'apple',      label: 'iOS App Store' },
-  { value: 'playstore',  label: 'Android Play Store' },
-  { value: 'gmb',        label: 'Google My Business' },
-];
-
-function lastDayOfMonth(year, month) {
-  return new Date(year, month, 0).getDate();
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+function daysAgoIso(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
 }
 
-function pad2(n) { return String(n).padStart(2, '0'); }
-
-function isoDate(year, month, day) {
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-// ── component ──────────────────────────────────────────────────────────────
+export const SECTIONS = [
+  { id: 's1', label: 'Overview' },
+  { id: 's2', label: 'Segmenti & Location' },
+  { id: 's3', label: 'Topic Analysis' },
+  { id: 's4', label: 'Customer Journey' },
+  { id: 's5', label: 'Tempistiche' },
+  { id: 's6', label: 'AI & Risposte' },
+];
 
 export default function AnalyticsPage() {
-  const now = new Date();
-  const analyticsRef = useRef(null);
-
-  // Period mode: 'month' | 'range'
-  const [periodMode, setPeriodMode] = useState('month');
-
-  // Month-mode state (default: current month)
-  const [selYear,  setSelYear]  = useState(now.getFullYear());
-  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
-
-  // Range-mode state (default: last 30 days)
-  const thirtyDaysAgo = new Date(now); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const [rangeFrom, setRangeFrom] = useState(isoDate(thirtyDaysAgo.getFullYear(), thirtyDaysAgo.getMonth()+1, thirtyDaysAgo.getDate()));
-  const [rangeTo,   setRangeTo]   = useState(isoDate(now.getFullYear(), now.getMonth()+1, now.getDate()));
-
-  // Channel
-  const [channel, setChannel] = useState('');
-
-  // BO filters (client-side display + API where supported)
-  const [filterSegmento,    setFilterSegmento]    = useState('');   // '' | airport | port | city | station
-  const [filterEnrichment,  setFilterEnrichment]  = useState('');   // '' | matched | pending_sync | organic_or_non_trustpilot
-  const [soloConBO,         setSoloConBO]         = useState(false);
-
-  // Data
-  const [stats,  setStats]  = useState(null);
-  const [topics, setTopics] = useState(null);
-  const [appleReviews, setAppleReviews] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [allReviews, setAllReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error,   setError]   = useState('');
-  const [pdfLoading, setPdfLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [activeSection, setActiveSection] = useState('s1');
+  const sectionRefs = useRef({});
+  const mainRef = useRef(null);
 
-  // Derived date params
-  const { fromDate, toDate, periodLabel } = useMemo(() => {
-    if (periodMode === 'month') {
-      const last = lastDayOfMonth(selYear, selMonth);
-      const from = isoDate(selYear, selMonth, 1);
-      const to   = isoDate(selYear, selMonth, last);
-      return { fromDate: from, toDate: to, periodLabel: `${selYear}-${pad2(selMonth)}` };
-    }
-    return { fromDate: rangeFrom, toDate: rangeTo, periodLabel: `${rangeFrom}_${rangeTo}` };
-  }, [periodMode, selYear, selMonth, rangeFrom, rangeTo]);
+  // Derive all filter state from URL — single source of truth
+  const filters = useMemo(() => ({
+    from:     searchParams.get('from')              || daysAgoIso(30),
+    to:       searchParams.get('to')               || todayIso(),
+    segmenti: searchParams.getAll('seg'),
+    sources:  searchParams.getAll('src'),
+    stelle:   searchParams.getAll('stelle').map(Number),
+    topics:   searchParams.getAll('topic'),
+    status:   searchParams.get('status')           || '',
+    customer: searchParams.get('customer')         || '',
+  }), [searchParams]);
 
-  const channelLabel = CHANNELS.find(c => c.value === channel)?.label?.replace(' ', '') || 'Tutti';
+  function updateFilters(updates) {
+    const next = new URLSearchParams(searchParams);
+    const KEY_MAP = { segmenti: 'seg', sources: 'src' };
+    Object.entries(updates).forEach(([key, value]) => {
+      const urlKey = KEY_MAP[key] || key;
+      next.delete(urlKey);
+      if (Array.isArray(value)) {
+        value.forEach(v => next.append(urlKey, String(v)));
+      } else if (value !== '' && value !== null && value !== undefined) {
+        next.set(urlKey, String(value));
+      }
+    });
+    setSearchParams(next, { replace: true });
+  }
 
-  // Years range for dropdown
-  const years = [];
-  for (let y = 2024; y <= now.getFullYear() + 1; y++) years.push(y);
+  function resetFilters() {
+    setSearchParams({}, { replace: true });
+  }
 
-  // Fetch
+  // Fetch all reviews once on mount
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = { from_date: fromDate, to_date: toDate, ...(channel ? { source: channel } : {}) };
-      const [statsData, topicsData, appleData] = await Promise.all([
-        fetchStats(params),
-        fetchTopicsBySegment(params),
-        channel === '' || channel === 'apple'
-          ? fetchReviews({ source: 'apple', limit: 6, offset: 0 })
-          : Promise.resolve(null),
-      ]);
-      setStats(statsData);
-      setTopics(topicsData);
-      setAppleReviews(appleData);
+      const data = await fetchReviews({ limit: 9999 });
+      setAllReviews(data?.recensioni || []);
     } catch (err) {
-      setError(getErrorMessage(err, 'Impossibile caricare i dati, riprova.'));
+      setError(getErrorMessage(err, 'Impossibile caricare le recensioni.'));
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate, channel]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  // PDF generation
-  const handlePdf = async () => {
-    if (!analyticsRef.current) return;
-    setPdfLoading(true);
-    try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import('jspdf'),
-        import('html2canvas'),
-      ]);
-      const canvas = await html2canvas(analyticsRef.current, { scale: 2, useCORS: true });
-      const pdf  = new jsPDF('landscape', 'mm', 'a4');
-      const w    = pdf.internal.pageSize.getWidth();
-      const h    = (canvas.height * w) / canvas.width;
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, w, h);
-      pdf.save(`Analytics_ParkingMyCar_${periodLabel}_${channelLabel}.pdf`);
-    } finally {
-      setPdfLoading(false);
-    }
-  };
+  // Intersection observer to track active section
+  useEffect(() => {
+    if (loading) return;
+    const root = mainRef.current;
+    if (!root) return;
 
-  const appleStars = getStarDistribution(channel === 'apple' ? stats : null).map((item) => ({
-    ...item,
-    color: item.stars >= 4 ? '#0EA5E9' : item.stars === 3 ? '#F59E0B' : '#6366F1',
-  }));
+    const observer = new IntersectionObserver(
+      entries => {
+        const hit = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (hit) setActiveSection(hit.target.id);
+      },
+      { root, threshold: 0.15, rootMargin: '-60px 0px -55% 0px' }
+    );
 
-  const isAppleOnly = channel === 'apple';
+    Object.values(sectionRefs.current).forEach(el => { if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [loading]);
 
-  // ── render ────────────────────────────────────────────────────────────────
+  // All client-side filtering — O(n) single pass
+  const filteredReviews = useMemo(() => {
+    const { from, to, segmenti, sources, stelle, topics, status, customer } = filters;
+    const toEnd = to ? to + 'T23:59:59' : null;
 
+    return allReviews.filter(r => {
+      if (from && (r.data || '') < from) return false;
+      if (toEnd && (r.data || '') > toEnd) return false;
+      if (segmenti.length && !segmenti.includes(r.segmento)) return false;
+      if (sources.length  && !sources.includes(r.source))   return false;
+      if (stelle.length   && !stelle.includes(Number(r.stelle))) return false;
+      if (topics.length   && !topics.some(t => (r.topics || []).includes(t))) return false;
+      if (status === 'matched' && r.enrichment_status !== 'matched') return false;
+      if (status === 'pending' && r.enrichment_status !== 'pending_sync') return false;
+      if (customer === 'new'        && (r.n_prenotazioni_precedenti || 0) !== 0) return false;
+      if (customer === 'returning'  && (r.n_prenotazioni_precedenti || 0) < 1)   return false;
+      if (customer === 'cross2'     && !r.cross_ever_completed_only)             return false;
+      if (customer === 'cross3plus' && (r.segmenti_precedenti || []).length < 2) return false;
+      return true;
+    });
+  }, [allReviews, filters]);
+
+  function scrollTo(id) {
+    if (id === 'pdf') return; // PDF handler will be wired in FASE 7
+    const el = sectionRefs.current[id];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Break out of Layout padding (px-4 py-4 lg:px-8 lg:py-6)
+  // header is h-14 = 56px
   return (
-    <div className="space-y-6">
+    <div
+      className="-mx-4 -my-4 lg:-mx-8 lg:-my-6 flex overflow-hidden"
+      style={{ height: 'calc(100vh - 56px)' }}
+    >
+      <Sidebar activeSection={activeSection} onNavigate={scrollTo} />
 
-      {/* ── Header + filter bar ─────────────────────────────────────────── */}
-      <section className="rounded-[20px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6 print:hidden">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase tracking-[0.18em] text-brand-600">Analytics</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.04em] text-ink">
-              Andamento recensioni
-            </h1>
-          </div>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <FilterBar
+          filters={filters}
+          onUpdate={updateFilters}
+          onReset={resetFilters}
+          total={allReviews.length}
+          filtered={filteredReviews.length}
+        />
 
-          {/* PDF button */}
-          <button
-            type="button"
-            onClick={handlePdf}
-            disabled={pdfLoading || loading}
-            className="self-start rounded-full px-5 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50"
-            style={{ backgroundColor: '#ff8300' }}
-          >
-            {pdfLoading ? 'Generazione…' : '⬇ Scarica PDF'}
-          </button>
-        </div>
+        <main
+          ref={mainRef}
+          className="flex-1 overflow-y-auto bg-[#f8f7f4] px-6 py-6"
+        >
+          {loading ? (
+            <SkeletonLoader />
+          ) : error ? (
+            <EmptyState message={error} onRetry={load} isError />
+          ) : (
+            <div className="space-y-6">
+              {filteredReviews.length === 0 && (
+                <EmptyState message="Nessuna recensione trovata con i filtri applicati." />
+              )}
 
-        {/* Filter row */}
-        <div className="mt-5 flex flex-wrap items-end gap-4">
-
-          {/* Period mode toggle */}
-          <div className="flex items-center gap-1 rounded-full border border-neutral-200 bg-neutral-50 p-1">
-            {[{ v: 'month', l: 'Mese' }, { v: 'range', l: 'Intervallo' }].map(({ v, l }) => (
-              <button
-                key={v} type="button"
-                onClick={() => setPeriodMode(v)}
-                className={[
-                  'rounded-full px-3 py-1 text-sm font-semibold transition',
-                  periodMode === v ? 'bg-white text-ink shadow-sm' : 'text-neutral-500 hover:text-ink',
-                ].join(' ')}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-
-          {/* Month pickers */}
-          {periodMode === 'month' && (
-            <>
-              <select
-                value={selYear}
-                onChange={e => setSelYear(Number(e.target.value))}
-                className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
-              >
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <select
-                value={selMonth}
-                onChange={e => setSelMonth(Number(e.target.value))}
-                className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
-              >
-                {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-              </select>
-            </>
-          )}
-
-          {/* Date range pickers */}
-          {periodMode === 'range' && (
-            <>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-neutral-500">Dal</label>
-                <input
-                  type="date" value={rangeFrom}
-                  max={rangeTo}
-                  onChange={e => setRangeFrom(e.target.value)}
-                  className="rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700 outline-none focus:border-brand-400"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-semibold text-neutral-500">Al</label>
-                <input
-                  type="date" value={rangeTo}
-                  min={rangeFrom}
-                  onChange={e => setRangeTo(e.target.value)}
-                  className="rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-semibold text-neutral-700 outline-none focus:border-brand-400"
-                />
-              </div>
-            </>
-          )}
-
-          {/* Channel selector */}
-          <select
-            value={channel}
-            onChange={e => setChannel(e.target.value)}
-            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
-          >
-            {CHANNELS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
-
-          {/* Segmento filter */}
-          <select
-            value={filterSegmento}
-            onChange={e => setFilterSegmento(e.target.value)}
-            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
-          >
-            <option value="">Tutti i segmenti</option>
-            <option value="airport">Airport</option>
-            <option value="port">Port</option>
-            <option value="city">City</option>
-            <option value="station">Station</option>
-          </select>
-
-          {/* Enrichment status filter */}
-          <select
-            value={soloConBO ? 'matched' : filterEnrichment}
-            onChange={e => {
-              setSoloConBO(false);
-              setFilterEnrichment(e.target.value);
-            }}
-            className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-2.5 text-sm font-semibold text-neutral-700 outline-none transition focus:border-brand-400"
-          >
-            <option value="">Tutti gli stati BO</option>
-            <option value="matched">Con BO (matched)</option>
-            <option value="pending_sync">In sync (pending)</option>
-            <option value="organic_or_non_trustpilot">Organiche</option>
-          </select>
-
-          {/* Solo con BO toggle */}
-          <button
-            type="button"
-            onClick={() => { setSoloConBO(v => !v); setFilterEnrichment(''); }}
-            className={[
-              'rounded-full border px-4 py-2.5 text-sm font-semibold transition',
-              soloConBO
-                ? 'border-brand-600 bg-brand-600 text-white'
-                : 'border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700',
-            ].join(' ')}
-          >
-            Solo con BO
-          </button>
-        </div>
-      </section>
-
-      {/* ── Content ──────────────────────────────────────────────────────── */}
-      <div ref={analyticsRef}>
-        {loading ? (
-          <LoadingState label="Sto caricando i dati…" />
-        ) : error ? (
-          <ErrorState message={error} onRetry={load} />
-        ) : isAppleOnly ? (
-          /* Apple-only view: no AI topics */
-          <div className="space-y-6">
-            <section className="rounded-[24px] border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">iOS App Store</p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-ink">Distribuzione stelle</h2>
-              <div className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                <div className="rounded-[18px] border border-sky-100 bg-[linear-gradient(135deg,_#e0f2fe_0%,_#ffffff_100%)] p-5 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Totale</p>
-                  <p className="mt-3 text-4xl font-semibold text-ink">{stats?.total_reviews || 0}</p>
-                </div>
-                <div className="rounded-[18px] border border-neutral-200 bg-neutral-50 p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Stelle</p>
-                  <div className="mt-4">
-                    <HorizontalBarChart items={appleStars} emptyLabel="Nessuna recensione iOS nel periodo." />
-                  </div>
-                </div>
-              </div>
-            </section>
-            <div className="rounded-[16px] border border-neutral-200 bg-neutral-50 px-5 py-4 text-sm text-neutral-500">
-              ℹ️ L'analisi topic non è disponibile per iOS App Store: Apple non espone API per pubblicare risposte, quindi l'AI non viene applicata.
+              {SECTIONS.map(({ id, label }, i) => (
+                <section
+                  key={id}
+                  id={id}
+                  ref={el => { sectionRefs.current[id] = el; }}
+                  className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">
+                    {label}
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">
+                    Fase {i + 1} — in costruzione
+                  </p>
+                  <p className="mt-3 text-2xl font-semibold text-ink">
+                    {id === 's1'
+                      ? `${filteredReviews.length.toLocaleString('it-IT')} recensioni caricate`
+                      : null}
+                  </p>
+                </section>
+              ))}
             </div>
-            {appleReviews?.recensioni?.length ? (
-              <section className="space-y-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Ultime recensioni iOS</p>
-                {appleReviews.recensioni.map(r => <ReviewRow key={r.id} review={r} compact />)}
-              </section>
-            ) : null}
-          </div>
-        ) : (
-          /* All other channels: full AnalyticsReport */
-          <AnalyticsReport
-            stats={stats}
-            topicsBySegment={topics}
-            selectedPeriod={null}
-            onPeriodChange={null}
-            filterSegmento={filterSegmento}
-            filterEnrichment={soloConBO ? 'matched' : filterEnrichment}
-          />
-        )}
+          )}
+        </main>
       </div>
     </div>
   );
