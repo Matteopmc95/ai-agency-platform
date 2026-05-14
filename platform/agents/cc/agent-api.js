@@ -708,20 +708,6 @@ app.get('/admin/gmb/oauth-callback', async (req, res) => {
   }
 });
 
-// TEMP: debug Trustpilot private review payload — da rimuovere dopo il test
-app.get('/admin/debug-tp-review/:reviewId', async (req, res) => {
-  try {
-    const token = await getTrustpilotAccessToken();
-    const { data } = await axios.get(
-      `https://api.trustpilot.com/v1/private/reviews/${req.params.reviewId}`,
-      { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
-    );
-    res.json({ keys: Object.keys(data), referenceId: data.referenceId, referenceNumber: data.referenceNumber, invitation: data.invitation, full: data });
-  } catch (err) {
-    res.status(500).json({ errore: err.response?.status, msg: err.message, data: err.response?.data });
-  }
-});
-
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
 app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;

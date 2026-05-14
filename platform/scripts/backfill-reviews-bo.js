@@ -102,13 +102,11 @@ async function run() {
 
       if (boData) {
         toUpdate.push({
-          id:                  r.id,
-          enrichment_status:   'matched',
-          segmento:            boData.segmento            || null,
-          localita:            boData.location_name       || null,
-          booking_date:        boData.transaction_date    || null,
-          prima_prenotazione:  boData.prima_prenotazione  ? true : false,
-          cross:               boData.cross               ? true : false,
+          id:               r.id,
+          enrichment_status: 'matched',
+          booking_date:     boData.transaction_date || null,
+          // segmento, localita, prima_prenotazione, cross → vanno su review_analysis, non su reviews
+          _boData:          boData,  // trasportato per l'upsert review_analysis
         });
         stats.matched++;
       } else {
@@ -117,13 +115,27 @@ async function run() {
       }
     }
 
-    // ── Applica update su reviews ────────────────────────────────────────────
+    // ── Applica update su reviews (solo campi della tabella reviews) ─────────
 
     if (!DRY_RUN) {
       for (const payload of toUpdate) {
-        const { id, ...fields } = payload;
-        const { error: uErr } = await supabase.from('reviews').update(fields).eq('id', id);
-        if (uErr) { console.error(`[update] Errore review_id=${id}: ${uErr.message}`); stats.errors++; }
+        const { id, _boData, ...reviewFields } = payload;
+        const { error: uErr } = await supabase.from('reviews').update(reviewFields).eq('id', id);
+        if (uErr) { console.error(`[update] Errore review_id=${id}: ${uErr.message}`); stats.errors++; continue; }
+
+        // Per i matched: upsert su review_analysis con i campi BO
+        if (_boData) {
+          const { error: raErr } = await supabase.from('review_analysis').upsert({
+            review_id:          id,
+            segmento:           _boData.segmento           || null,
+            localita:           _boData.location_name      || null,
+            booking_date:       _boData.transaction_date   || null,
+            prima_prenotazione: Boolean(_boData.prima_prenotazione),
+            cross:              Boolean(_boData.cross),
+            flag_cross:         Boolean(_boData.cross),
+          }, { onConflict: 'review_id', ignoreDuplicates: false });
+          if (raErr) console.error(`[upsert-ra] review_id=${id}: ${raErr.message}`);
+        }
       }
     }
 
