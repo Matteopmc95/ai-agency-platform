@@ -708,23 +708,6 @@ app.get('/admin/gmb/oauth-callback', async (req, res) => {
   }
 });
 
-// TEMP: test recover refid su Valerio Felici
-app.get('/admin/test-recover-refid', async (_req, res) => {
-  try {
-    const token = await getTrustpilotAccessToken();
-    const { data } = await axios.get(
-      'https://api.trustpilot.com/v1/private/reviews/69fc51637bf118b06d276a7c',
-      { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
-    );
-    const refId = data.referenceId || data.referenceNumber || null;
-    // Update DB
-    const { error: uErr } = await supabase.from('reviews')
-      .update({ reference_id: refId ? String(refId) : null })
-      .eq('trustpilot_id', '69fc51637bf118b06d276a7c');
-    res.json({ referenceId: data.referenceId, referenceNumber: data.referenceNumber, refIdUsed: refId, dbUpdated: !uErr, dbError: uErr?.message });
-  } catch (err) { res.status(500).json({ errore: err.response?.status, msg: err.message }); }
-});
-
 // --- ADMIN: CHECK GOOGLE CREDENTIALS ---
 app.get('/admin/check-google-credentials', authMiddleware, async (_req, res) => {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
