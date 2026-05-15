@@ -22,7 +22,7 @@ const BO_USER      = process.env.BO_API_USERNAME;
 const BO_PASS      = process.env.BO_API_PASSWORD;
 const CHUNK_MS     = 1000;        // ms di pausa tra chiamate API
 const TIMEOUT_MS   = 90_000;     // timeout default: 90s
-const UPSERT_BATCH = 500;
+const UPSERT_BATCH = 100;
 
 const missing = ['BO_API_BASE', 'BO_API_USERNAME', 'BO_API_PASSWORD', 'SUPABASE_URL', 'SUPABASE_ANON_KEY']
   .filter(k => !process.env[k]);
@@ -167,12 +167,46 @@ async function fetchWithFallback(startDate, endDate, label) {
   return allRows;
 }
 
-// ── Upsert batch ─────────────────────────────────────────────────────────────
+// ── Upsert batch con verifica e retry singolo ─────────────────────────────────
 
-async function upsertBatch(rows) {
-  if (!rows.length) return;
+async function upsertBatch(rows, batchLabel = '') {
+  if (!rows.length) return 0;
+
   const { error } = await supabase.from('bo_bookings').upsert(rows, { onConflict: 'transaction_id' });
   if (error) throw new Error(`Supabase upsert: ${error.message}`);
+
+  // Verifica quante righe sono effettivamente scritte
+  const ids = rows.map(r => r.transaction_id);
+  const { count: written } = await supabase
+    .from('bo_bookings')
+    .select('*', { count: 'exact', head: true })
+    .in('transaction_id', ids);
+
+  const missing = rows.length - (written || 0);
+  if (missing > 0) {
+    console.warn(`[BOOTSTRAP]${batchLabel} inviate ${rows.length}, scritte ${written ?? '?'}, mancanti ${missing} — retry singolo`);
+    // Fetch le scritte per trovare le mancanti
+    const { data: found } = await supabase
+      .from('bo_bookings')
+      .select('transaction_id')
+      .in('transaction_id', ids);
+    const foundSet = new Set((found || []).map(r => r.transaction_id));
+    const toRetry  = rows.filter(r => !foundSet.has(r.transaction_id));
+
+    let retried = 0;
+    for (const row of toRetry) {
+      const { error: se } = await supabase.from('bo_bookings').upsert(row, { onConflict: 'transaction_id' });
+      if (se) {
+        console.error(`[BOOTSTRAP] Retry fallito per ${row.transaction_id}: ${se.message}`);
+      } else {
+        retried++;
+      }
+    }
+    console.log(`[BOOTSTRAP]${batchLabel} Recovery singolo: ${retried}/${toRetry.length} OK`);
+    return retried;
+  }
+
+  return 0;
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -209,8 +243,10 @@ async function run() {
       const bookings = await fetchWithFallback(start, end, label);
 
       if (!DRY_RUN) {
+        let batchNum = 0;
         for (let i = 0; i < bookings.length; i += UPSERT_BATCH) {
-          await upsertBatch(bookings.slice(i, i + UPSERT_BATCH));
+          batchNum++;
+          await upsertBatch(bookings.slice(i, i + UPSERT_BATCH), ` [${label} batch ${batchNum}]`);
         }
         totalInserted += bookings.length;
       }

@@ -8,6 +8,7 @@ const Papa  = require('papaparse');
 const { processaRecensione } = require('./agent-reviews');
 const { avviaPollingPlayStore, rispondiPlayStore, fetchReviewsSince } = require('./sources/play-store');
 const { avviaPollingApple } = require('./sources/apple-store');
+const { boLookupBatch } = require('./utils/bo-lookup');
 
 const app = express();
 app.use(cors({
@@ -544,29 +545,54 @@ app.get('/reviews', async (req, res) => {
   const off = parseInt(offset);
   const ascending = sort === 'asc';
 
-  let query = supabase
-    .from('reviews')
-    .select('*, review_analysis(*)')
-    .gte('stelle', parseInt(stelle_min))
-    .lte('stelle', parseInt(stelle_max))
-    .order('data', { ascending })
-    .range(off, off + lim - 1);
+  // TODO: con >10K recensioni, refactor con aggregate queries lato DB (no fetch righe completo).
+  // Supabase PostgREST ha cap 1000 righe/query: per limit > 1000 paginiamo internamente.
+  const PAGE = 1000;
+  const t0 = Date.now();
 
-  if (stato) query = query.eq('stato', stato);
-  query = applySourceFilter(query, source);
+  function buildDataQuery(pageStart, pageEnd) {
+    let q = supabase
+      .from('reviews')
+      .select('*, review_analysis(*)')
+      .gte('stelle', parseInt(stelle_min))
+      .lte('stelle', parseInt(stelle_max))
+      .order('data', { ascending })
+      .range(pageStart, pageEnd);
+    if (stato) q = q.eq('stato', stato);
+    return applySourceFilter(q, source);
+  }
 
   let countQuery = supabase
     .from('reviews')
     .select('*', { count: 'exact', head: true })
     .gte('stelle', parseInt(stelle_min))
     .lte('stelle', parseInt(stelle_max));
-
   if (stato) countQuery = countQuery.eq('stato', stato);
   countQuery = applySourceFilter(countQuery, source);
 
-  const [{ data: recensioni, error }, { count: totale }] = await Promise.all([query, countQuery]);
+  // Prima pagina e count in parallelo
+  const [{ data: page0, error: err0 }, { count: totale }] = await Promise.all([
+    buildDataQuery(off, off + Math.min(PAGE, lim) - 1),
+    countQuery,
+  ]);
+  if (err0) return res.status(500).json({ errore: err0.message });
 
-  if (error) return res.status(500).json({ errore: error.message });
+  let recensioni = page0 || [];
+
+  // Pagine successive se richiesto più di 1000 e ce ne sono altre
+  if (lim > PAGE && recensioni.length === PAGE) {
+    for (let page = 1; recensioni.length < lim; page++) {
+      const pageStart = off + page * PAGE;
+      const pageEnd   = pageStart + Math.min(PAGE, lim - recensioni.length) - 1;
+      const { data: pageData, error: pe } = await buildDataQuery(pageStart, pageEnd);
+      if (pe) { console.error('[GET /reviews] pagina errore:', pe.message); break; }
+      if (!pageData?.length) break;
+      recensioni = recensioni.concat(pageData);
+      if (pageData.length < PAGE) break;
+    }
+  }
+
+  console.log(`[GET /reviews] ${recensioni.length} righe (totale DB: ${totale}) in ${Date.now() - t0}ms`);
 
   res.json({
     totale: totale || 0,
@@ -1659,13 +1685,20 @@ app.listen(PORT, () => {
     startBOSync();
     console.log('[BO SYNC] Cron notturno schedulato (03:00 Europe/Rome)');
   }
+
+  // Re-backfill pending — attivare con REBACKFILL_ENABLED=true su Railway
+  if (process.env.REBACKFILL_ENABLED === 'true') {
+    startReBackfill();
+    console.log('[RE-BACKFILL] Cron schedulato (04:00 Europe/Rome)');
+  }
 });
 
 // ── BO SYNC NOTTURNO ─────────────────────────────────────────────────────────
 // Attivare aggiungendo BO_SYNC_ENABLED=true su Railway.
 // Gira ogni notte alle 03:00 Europe/Rome (check ogni 5 min).
 
-let _boSyncLastDate = null; // YYYY-MM-DD — evita doppia esecuzione nella stessa notte
+let _boSyncLastDate      = null; // YYYY-MM-DD — evita doppia esecuzione nella stessa notte
+let _reBackfillLastDate  = null; // idem per re-backfill delle 04:00
 
 async function syncBOForDate(startDate, endDate = startDate) {
   const auth = Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64');
@@ -1753,6 +1786,234 @@ function startBOSync() {
           req.write(body); req.end();
         }
       } catch (_) { /* alert failure non blocca */ }
+    }
+  }, 5 * 60 * 1000); // check ogni 5 minuti
+}
+
+// ── RE-BACKFILL PENDING BO ────────────────────────────────────────────────────
+// Ritenta il match BO per recensioni pending_sync.
+// Attivare con REBACKFILL_ENABLED=true su Railway.
+// Gira ogni notte alle 04:00 Europe/Rome (check ogni 5 min), dopo il BO SYNC.
+//
+// Recovery API (REBACKFILL_RECOVERY_ENABLED=true):
+// Se una review non è in bo_bookings, chiama l'API BO con il range stimato
+// dalla data della recensione (booking avviene 0-60 giorni prima).
+// Raggruppa per mese → 1 chiamata API per mese con pending, max 2 req/sec.
+
+function startReBackfill() {
+  const BATCH_SIZE = Number(process.env.BACKFILL_BATCH_SIZE) || 100;
+  const RECOVERY   = process.env.REBACKFILL_RECOVERY_ENABLED === 'true';
+  const BO_AUTH    = (process.env.BO_API_USERNAME && process.env.BO_API_PASSWORD)
+    ? Buffer.from(`${process.env.BO_API_USERNAME}:${process.env.BO_API_PASSWORD}`).toString('base64')
+    : null;
+
+  setInterval(async () => {
+    const now      = new Date();
+    const romeHour = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(now));
+    const romeMin  = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', minute: 'numeric' }).format(now));
+    const today    = now.toISOString().slice(0, 10);
+
+    if (romeHour !== 4 || romeMin >= 5 || _reBackfillLastDate === today) return;
+    _reBackfillLastDate = today;
+
+    // 1. Carica tutte le recensioni pending_sync con reference_id e data recensione
+    const pending = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('id, reference_id, data')
+        .eq('enrichment_status', 'pending_sync')
+        .not('reference_id', 'is', null)
+        .order('id', { ascending: true })
+        .range(from, from + BATCH_SIZE - 1);
+
+      if (error) { console.error('[RE-BACKFILL] fetch error:', error.message); break; }
+      if (!data?.length) break;
+      pending.push(...data);
+      if (data.length < BATCH_SIZE) break;
+      from += BATCH_SIZE;
+    }
+
+    console.log(`[RE-BACKFILL] ${pending.length} recensioni in pending_sync`);
+    if (!pending.length) { await log('agent-api', 're_backfill_noop', { today }); return; }
+
+    // 2. Batch lookup BO in bo_bookings
+    let recovered = 0, stillPending = 0;
+    const notFound = []; // raccoglie i review ancora pending dopo il lookup DB
+
+    try {
+      for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+        const chunk  = pending.slice(i, i + BATCH_SIZE);
+        const refIds = chunk.map(r => String(r.reference_id).trim());
+        const boMap  = await boLookupBatch(refIds);
+
+        for (const r of chunk) {
+          const boData = boMap.get(String(r.reference_id).trim());
+          if (boData) {
+            await supabase.from('reviews').update({
+              enrichment_status: 'matched',
+              booking_date:      boData.transaction_date || null,
+            }).eq('id', r.id);
+            await supabase.from('review_analysis').update({
+              segmento:          boData.segmento           || null,
+              localita:          boData.location_name      || null,
+              prima_prenotazione: boData.prima_prenotazione ? true : false,
+              cross:             boData.cross              ? true : false,
+            }).eq('review_id', r.id);
+            recovered++;
+          } else {
+            notFound.push(r);
+          }
+        }
+      }
+
+      // 3. Recovery API — solo se abilitato e ci sono ancora pending
+      if (RECOVERY && notFound.length > 0 && BO_AUTH && process.env.BO_API_BASE) {
+        console.log(`[RE-BACKFILL][RECOVERY] ${notFound.length} review non trovate in bo_bookings, tento recovery API`);
+
+        // Raggruppa per mese di riferimento (data recensione - 30 giorni come stima booking)
+        const byMonth = new Map(); // key: 'YYYY-MM' → array di review
+        for (const r of notFound) {
+          if (!r.data) continue;
+          const anchor = new Date(new Date(r.data).getTime() - 30 * 86_400_000);
+          const key    = anchor.toISOString().slice(0, 7); // YYYY-MM
+          if (!byMonth.has(key)) byMonth.set(key, []);
+          byMonth.get(key).push(r);
+        }
+
+        for (const [monthKey, group] of byMonth) {
+          // Range: da 60 giorni prima del mese alla fine del mese
+          const [y, m]   = monthKey.split('-').map(Number);
+          const rangeEnd = new Date(Date.UTC(y, m, 0));                           // ultimo giorno del mese
+          const rangeStart = new Date(rangeEnd.getTime() - 60 * 86_400_000);     // -60 giorni
+          const startStr = rangeStart.toISOString().slice(0, 10);
+          const endStr   = rangeEnd.toISOString().slice(0, 10);
+
+          // Rate limit: 500ms prima di ogni chiamata API (2 req/sec)
+          await new Promise(r => setTimeout(r, 500));
+
+          let csvRows = [];
+          try {
+            const { data: csvText } = await axios.get(
+              `${process.env.BO_API_BASE}/reporting/marketing/booking-details`,
+              {
+                headers: { Authorization: `Basic ${BO_AUTH}`, Accept: 'text/csv' },
+                params:  { start_date: startStr, end_date: endStr },
+                timeout: 90_000, responseType: 'text',
+              }
+            );
+            // Parsing minimale inline (evita dipendenza Papa qui)
+            const lines  = (csvText || '').replace(/^﻿/, '').split('\n');
+            const header = lines[0]?.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const tidIdx = header?.indexOf('transaction_id');
+            if (tidIdx >= 0) {
+              for (let li = 1; li < lines.length; li++) {
+                const cols = lines[li].split(',');
+                const tid  = (cols[tidIdx] || '').trim().replace(/^"|"$/g, '');
+                if (tid) csvRows.push({ transaction_id: tid, _raw: cols, _header: header });
+              }
+            }
+          } catch (apiErr) {
+            console.warn(`[RE-BACKFILL][RECOVERY] API fallita per range ${startStr}→${endStr}: ${apiErr.message?.slice(0,80)}`);
+            continue;
+          }
+
+          // Mappa transaction_id → raw row
+          const apiMap = new Map();
+          for (const row of csvRows) apiMap.set(row.transaction_id, row);
+
+          // Cerca ogni reference_id del gruppo nel risultato API
+          for (const r of group) {
+            const refId  = String(r.reference_id).trim();
+            const apiRow = apiMap.get(refId);
+            if (!apiRow) { stillPending++; continue; }
+
+            // Ricostruisce l'oggetto booking dal CSV grezzo
+            const h = apiRow._header;
+            const c = apiRow._raw;
+            const toTs = v => { if (!v?.trim()) return null; const d = new Date(v.trim().replace(' ','T')+'Z'); return isNaN(d.getTime()) ? null : d.toISOString(); };
+            const toNum = v => { const n = parseFloat(v); return isNaN(n) ? null : n; };
+            const get   = k => (c[h.indexOf(k)] || '').trim().replace(/^"|"$/g,'') || null;
+
+            const booking = {
+              transaction_id:                  refId,
+              user_email_sha256:               get('user_email_sha256')?.toLowerCase() || null,
+              segmento:                        get('type') || get('parking_type') || null,
+              transaction_date:                toTs(get('transaction_date')),
+              booking_start:                   toTs(get('booking_start')),
+              booking_end:                     toTs(get('booking_end')),
+              location_name:                   get('location_name'),
+              parking_name:                    get('parking_name'),
+              final_price:                     toNum(get('final_price')),
+              paid_price:                      toNum(get('paid_price')),
+              user_first_booking_date:         toTs(get('user_first_booking_date')),
+              user_first_booking_parking_type: get('user_first_booking_parking_type'),
+              transaction_state:               get('transaction_state'),
+              synced_at:                       new Date().toISOString(),
+            };
+
+            // Upsert in bo_bookings
+            await supabase.from('bo_bookings').upsert(booking, { onConflict: 'transaction_id' });
+
+            // Match la review
+            const firstType = booking.user_first_booking_parking_type;
+            const seg       = booking.segmento;
+            const txDate    = booking.transaction_date?.slice(0, 10);
+            const firstDate = booking.user_first_booking_date?.slice(0, 10);
+            await supabase.from('reviews').update({
+              enrichment_status: 'matched',
+              booking_date:      booking.transaction_date || null,
+            }).eq('id', r.id);
+            await supabase.from('review_analysis').update({
+              segmento:          seg || null,
+              localita:          booking.location_name || null,
+              prima_prenotazione: !!(txDate && firstDate && txDate === firstDate),
+              cross:             !!(firstType && seg && firstType !== seg),
+            }).eq('review_id', r.id);
+            recovered++;
+          }
+
+          console.log(`[RE-BACKFILL][RECOVERY] ${monthKey}: trovate ${apiMap.size} prenotazioni, recuperate ${group.filter(r => apiMap.has(String(r.reference_id).trim())).length}/${group.length} pending`);
+        }
+      } else if (!RECOVERY && notFound.length > 0) {
+        stillPending = notFound.length;
+      }
+
+      await log('agent-api', 're_backfill_completato', { recovered, stillPending });
+      console.log(`[RE-BACKFILL] Recuperate: ${recovered} | Ancora pending: ${stillPending}`);
+
+      if (recovered > 0) {
+        try {
+          const https = require('https');
+          const tok = process.env.TELEGRAM_BOT_TOKEN;
+          const cid = process.env.TELEGRAM_ALERT_CHAT_ID;
+          if (tok && cid) {
+            const body = JSON.stringify({ chat_id: cid, parse_mode: 'HTML',
+              text: `Re-backfill BO: recuperate <b>${recovered}</b> recensioni pending\nAncora in attesa: ${stillPending}` });
+            const req = https.request({ hostname: 'api.telegram.org', path: `/bot${tok}/sendMessage`,
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 }, () => {});
+            req.on('error', () => {});
+            req.write(body); req.end();
+          }
+        } catch (_) {}
+      }
+    } catch (err) {
+      await log('agent-api', 're_backfill_errore', { errore: err.message });
+      console.error(`[RE-BACKFILL] Errore: ${err.message}`);
+      try {
+        const https = require('https');
+        const tok = process.env.TELEGRAM_BOT_TOKEN;
+        const cid = process.env.TELEGRAM_ALERT_CHAT_ID;
+        if (tok && cid) {
+          const body = JSON.stringify({ chat_id: cid, parse_mode: 'HTML',
+            text: `CRON RE-BACKFILL FALLITO\nData: ${today}\nErrore: <code>${err.message.slice(0, 200)}</code>` });
+          const req = https.request({ hostname: 'api.telegram.org', path: `/bot${tok}/sendMessage`,
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, timeout: 10000 }, () => {});
+          req.on('error', () => {});
+          req.write(body); req.end();
+        }
+      } catch (_) {}
     }
   }, 5 * 60 * 1000); // check ogni 5 minuti
 }

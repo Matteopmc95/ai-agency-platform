@@ -59,14 +59,23 @@ async function run() {
 
       if (boData) {
         if (!DRY_RUN) {
-          await supabase.from('reviews').update({
-            enrichment_status:   'matched',
-            segmento:            boData.segmento           || null,
-            localita:            boData.location_name      || null,
-            booking_date:        boData.transaction_date   || null,
-            prima_prenotazione:  boData.prima_prenotazione ? true : false,
-            cross:               boData.cross              ? true : false,
+          // Aggiorna solo le colonne che esistono in reviews
+          const { error: revErr } = await supabase.from('reviews').update({
+            enrichment_status: 'matched',
+            booking_date:      boData.transaction_date || null,
           }).eq('id', r.id);
+          if (revErr) { console.error(`[update reviews ${r.id}] ${revErr.message}`); }
+
+          // Aggiorna review_analysis per segmento/localita/cross/prima_prenotazione
+          const { error: raErr } = await supabase.from('review_analysis')
+            .update({
+              segmento:          boData.segmento           || null,
+              localita:          boData.location_name      || null,
+              prima_prenotazione: boData.prima_prenotazione ? true : false,
+              cross:             boData.cross              ? true : false,
+            })
+            .eq('review_id', r.id);
+          if (raErr) { console.error(`[update review_analysis ${r.id}] ${raErr.message}`); }
         }
         recovered++;
       } else {
