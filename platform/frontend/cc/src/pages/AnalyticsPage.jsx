@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { useSearchParams } from 'react-router-dom';
 import { fetchReviews, getErrorMessage } from '../lib/api';
 import FilterBar from '../components/analytics/FilterBar';
@@ -38,6 +39,7 @@ export default function AnalyticsPage() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('s1');
   const [exporting, setExporting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const sectionRefs = useRef({});
   const mainRef = useRef(null);
 
@@ -153,7 +155,21 @@ export default function AnalyticsPage() {
       className="-mx-4 -my-4 lg:-mx-8 lg:-my-6 flex overflow-hidden"
       style={{ height: 'calc(100vh - 56px)' }}
     >
-      <Sidebar activeSection={activeSection} onNavigate={scrollTo} exporting={exporting} />
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <Sidebar
+        activeSection={activeSection}
+        onNavigate={(id) => { setSidebarOpen(false); scrollTo(id); }}
+        exporting={exporting}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <FilterBar
@@ -162,11 +178,12 @@ export default function AnalyticsPage() {
           onReset={resetFilters}
           total={allReviews.length}
           filtered={filteredReviews.length}
+          onOpenSidebar={() => setSidebarOpen(true)}
         />
 
         <main
           ref={mainRef}
-          className="flex-1 overflow-y-auto bg-[#f8f7f4] px-6 py-6"
+          className="flex-1 overflow-y-auto bg-[#f8f7f4] px-3 py-4 md:px-6 md:py-6"
         >
           {loading ? (
             <SkeletonLoader />

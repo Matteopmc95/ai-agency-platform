@@ -49,11 +49,34 @@ const NAV_ITEMS = [
   },
 ];
 
-export default function Sidebar({ activeSection, onNavigate, exporting = false }) {
+export default function Sidebar({ activeSection, onNavigate, exporting = false, isOpen = false, onClose }) {
   return (
-    <aside className="flex w-52 shrink-0 flex-col border-r border-neutral-200 bg-white">
+    <aside className={[
+      'flex w-64 shrink-0 flex-col border-r border-neutral-200 bg-white',
+      // Desktop: always visible in flex flow
+      'lg:static lg:w-52 lg:translate-x-0 lg:z-auto lg:flex',
+      // Mobile: fixed drawer, slides in/out
+      'fixed inset-y-0 left-0 z-50 transition-transform duration-200',
+      isOpen ? 'translate-x-0' : '-translate-x-full',
+      'lg:translate-x-0',
+    ].join(' ')}>
+      {/* Mobile header with close button */}
+      <div className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 lg:hidden">
+        <span className="text-sm font-semibold text-neutral-700">Sezioni</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100"
+          aria-label="Chiudi menu"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+          </svg>
+        </button>
+      </div>
+
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">
+        <p className="mb-2 hidden px-3 text-xs font-semibold uppercase tracking-widest text-neutral-400 lg:block">
           Sezioni
         </p>
         <nav className="space-y-0.5">

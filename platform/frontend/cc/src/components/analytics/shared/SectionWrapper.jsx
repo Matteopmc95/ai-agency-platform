@@ -10,7 +10,7 @@ const SectionWrapper = forwardRef(function SectionWrapper(
       ref={ref}
       className={['rounded-2xl border border-neutral-200 bg-white shadow-sm', className].join(' ')}
     >
-      <div className="border-b border-neutral-100 px-6 py-5">
+      <div className="border-b border-neutral-100 px-4 py-4 md:px-6 md:py-5">
         {label && (
           <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400">{label}</p>
         )}
@@ -24,7 +24,7 @@ const SectionWrapper = forwardRef(function SectionWrapper(
           </div>
         )}
       </div>
-      <div className="p-6">{children}</div>
+      <div className="p-4 md:p-6">{children}</div>
     </section>
   );
 });

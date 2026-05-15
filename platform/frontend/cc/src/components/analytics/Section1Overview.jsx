@@ -265,7 +265,7 @@ const Section1Overview = forwardRef(function Section1Overview(
             {/* Chart 1 — Volume */}
             <div>
               <p className="mb-3 text-sm font-semibold text-neutral-700">Volume recensioni</p>
-              <ResponsiveContainer width="100%" height={224}>
+              <ResponsiveContainer width="100%" height={180}>
                 <BarChart
                   data={trendData}
                   margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
@@ -299,7 +299,7 @@ const Section1Overview = forwardRef(function Section1Overview(
             {/* Chart 2 — Rating */}
             <div>
               <p className="mb-3 text-sm font-semibold text-neutral-700">Rating medio</p>
-              <ResponsiveContainer width="100%" height={160}>
+              <ResponsiveContainer width="100%" height={130}>
                 <LineChart
                   data={trendData}
                   margin={{ top: 4, right: 16, left: 0, bottom: 0 }}

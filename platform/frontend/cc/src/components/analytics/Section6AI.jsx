@@ -367,7 +367,7 @@ const Section6AI = forwardRef(function Section6AI({ reviews }, ref) {
               Barre viola = risposta pubblicata senza modifica (AI autonoma). Arancio = modifica umana.
               Un trend verso il viola indica che l&apos;agente migliora.
             </p>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={160}>
               <BarChart
                 data={monthlyTrend}
                 margin={{ top: 4, right: 16, left: 0, bottom: 0 }}

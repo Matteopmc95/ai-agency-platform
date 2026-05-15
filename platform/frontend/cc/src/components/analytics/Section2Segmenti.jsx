@@ -249,7 +249,7 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
           {/* Bar performance per segmento */}
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Performance per segmento</p>
-            <ResponsiveContainer width="100%" height={208}>
+            <ResponsiveContainer width="100%" height={180}>
               <BarChart
                 data={barData}
                 margin={{ top: 20, right: 16, left: 0, bottom: 0 }}
@@ -291,8 +291,8 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
         {/* ── Row 2: Top 10 Locations ──────────────────────────────── */}
         <div>
           <p className="mb-4 text-sm font-semibold text-neutral-700">Top 10 Location per volume</p>
-          <div className="overflow-hidden rounded-xl border border-neutral-200">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-neutral-200">
+            <table className="w-full min-w-[480px] text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50">
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">Location</th>

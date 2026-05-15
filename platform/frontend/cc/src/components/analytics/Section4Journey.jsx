@@ -297,7 +297,7 @@ const Section4Journey = forwardRef(function Section4Journey({ reviews }, ref) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Piramide clienti</p>
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={160}>
               <BarChart
                 data={pyramid}
                 margin={{ top: 4, right: 40, left: 0, bottom: 0 }}
@@ -336,8 +336,8 @@ const Section4Journey = forwardRef(function Section4Journey({ reviews }, ref) {
           {/* ── 3.5 Satisfaction by Journey Type ──────────────────── */}
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Soddisfazione per tipo cliente</p>
-            <div className="overflow-hidden rounded-xl border border-neutral-200">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-xl border border-neutral-200">
+              <table className="w-full min-w-[380px] text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 bg-neutral-50">
                     <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">Tipo</th>
@@ -465,31 +465,31 @@ const Section4Journey = forwardRef(function Section4Journey({ reviews }, ref) {
         {loyaltyTable.length > 0 && (
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Top 10 clienti per fedeltà</p>
-            <div className="overflow-hidden rounded-xl border border-neutral-200">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-xl border border-neutral-200">
+              <table className="w-full min-w-[480px] text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 bg-neutral-50">
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">#</th>
-                    <th className="min-w-[160px] px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">Cliente</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Anni</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Prenotazioni</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Segmenti</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Rating</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">#</th>
+                    <th className="min-w-[120px] px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">Cliente</th>
+                    <th className="hidden px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500 sm:table-cell">Anni</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Prenotazioni</th>
+                    <th className="hidden px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500 sm:table-cell">Segmenti</th>
+                    <th className="px-3 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-neutral-500">Rating</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-100">
                   {loyaltyTable.map((row, i) => (
                     <tr key={i} className="hover:bg-neutral-50">
-                      <td className="px-4 py-2.5 text-xs text-neutral-400">{i + 1}</td>
-                      <td className="min-w-[160px] px-4 py-2.5 font-medium text-ink">{row.displayName}</td>
-                      <td className="px-4 py-2.5 text-right text-neutral-700">
+                      <td className="px-3 py-2.5 text-xs text-neutral-400">{i + 1}</td>
+                      <td className="min-w-[120px] px-3 py-2.5 font-medium text-ink">{row.displayName}</td>
+                      <td className="hidden px-3 py-2.5 text-right text-neutral-700 sm:table-cell">
                         {row.anni != null ? row.anni : '—'}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-ink">
+                      <td className="px-3 py-2.5 text-right font-semibold text-ink">
                         {row.prenotazioni.toLocaleString('it-IT')}
                       </td>
-                      <td className="px-4 py-2.5 text-right text-neutral-700">{row.segmenti}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold text-ink">
+                      <td className="hidden px-3 py-2.5 text-right text-neutral-700 sm:table-cell">{row.segmenti}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-ink">
                         {row.rating != null ? row.rating.toFixed(1) : '—'}
                       </td>
                     </tr>

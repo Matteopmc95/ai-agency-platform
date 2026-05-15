@@ -165,7 +165,7 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
           {/* Day of week */}
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Recensioni per giorno della settimana</p>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={150}>
               <BarChart data={dowData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis
@@ -196,7 +196,7 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Recensioni per ora del giorno</p>
             {hasHourData ? (
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={150}>
                 <LineChart data={hourData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                   <XAxis
@@ -233,7 +233,7 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
         {hasTimingData && (
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Tempo dalla prenotazione alla recensione</p>
-            <ResponsiveContainer width="100%" height={160}>
+            <ResponsiveContainer width="100%" height={140}>
               <BarChart data={timingData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis

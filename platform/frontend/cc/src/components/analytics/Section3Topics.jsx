@@ -174,7 +174,7 @@ const Section3Topics = forwardRef(function Section3Topics({ reviews }, ref) {
         {/* ── Horizontal bar chart ────────────────────────────────── */}
         <div>
           <p className="mb-4 text-sm font-semibold text-neutral-700">Volume per topic</p>
-          <ResponsiveContainer width="100%" height={360}>
+          <ResponsiveContainer width="100%" height={280}>
             <BarChart
               layout="vertical"
               data={topicStats}
