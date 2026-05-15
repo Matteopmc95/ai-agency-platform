@@ -119,7 +119,8 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
 
     const locMap = new Map();
     reviews.forEach(r => {
-      const loc = r.localita || '(sconosciuta)';
+      const loc = (r.localita || '').trim();
+      if (!loc) return; // esclude review senza localita valida
       if (!locMap.has(loc)) {
         locMap.set(loc, { loc, seg: r.segmento, count: 0, starSum: 0, starCount: 0,
           earlyStarSum: 0, earlyStarCount: 0, lateStarSum: 0, lateStarCount: 0 });
