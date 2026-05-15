@@ -602,6 +602,16 @@ app.get('/reviews', async (req, res) => {
         flag_referral: Boolean(a.flag_referral),
         flag_cross: Boolean(a.flag_cross),
         tipo_risposta: a.tipo_risposta || null,
+        segmenti_precedenti: a.segmenti_precedenti || [],
+        segmenti_precedenti_completed: a.segmenti_precedenti_completed || [],
+        segmento_origine: a.segmento_origine || null,
+        n_prenotazioni_precedenti: a.n_prenotazioni_precedenti ?? null,
+        n_prenotazioni_precedenti_completed: a.n_prenotazioni_precedenti_completed ?? null,
+        cross_with_cancelled: Boolean(a.cross_with_cancelled),
+        cross_completed_only: Boolean(a.cross_completed_only),
+        cross_ever_with_cancelled: Boolean(a.cross_ever_with_cancelled),
+        cross_ever_completed_only: Boolean(a.cross_ever_completed_only),
+        giorni_da_prima_prenotazione: a.giorni_da_prima_prenotazione ?? null,
       };
     }),
   });

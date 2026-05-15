@@ -382,7 +382,7 @@ export default function ReviewDetailPage() {
               <>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-sm text-neutral-500">
-                    La risposta AI non è ancora disponibile. Puoi scrivere manualmente il messaggio.
+                    La risposta Stefy Agent non è ancora disponibile. Puoi scrivere manualmente il messaggio.
                   </p>
                   <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
                     Modifica manuale

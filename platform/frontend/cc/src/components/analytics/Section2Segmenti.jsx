@@ -1,13 +1,13 @@
 import { forwardRef, useMemo, useState } from 'react';
 import {
   PieChart, Pie, Cell, Tooltip as PieTooltip, ResponsiveContainer,
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, LabelList,
 } from 'recharts';
 import SectionWrapper from './shared/SectionWrapper';
 import EmptyState from './shared/EmptyState';
 import {
   SEGMENT_COLORS, SEGMENT_BG, SEGMENT_LABELS, SEGMENT_ORDER, SEGMENT_BADGE_CLS,
-  RATING_COLOR, VOLUME_COLOR, GRID_COLOR, AXIS_COLOR,
+  VOLUME_COLOR, GRID_COLOR, AXIS_COLOR,
 } from './analytics-constants';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,7 +101,11 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
 
   // Bar chart data (all 4, ordered)
   const barData = useMemo(
-    () => segStats.map(s => ({ ...s, fill: SEGMENT_COLORS[s.seg] || '#94a3b8' })),
+    () => segStats.map(s => ({
+      ...s,
+      fill: SEGMENT_COLORS[s.seg] || '#94a3b8',
+      ratingStr: s.rating > 0 ? s.rating.toFixed(1) : '',
+    })),
     [segStats]
   );
 
@@ -190,26 +194,29 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
                       outerRadius={90}
                       paddingAngle={2}
                       dataKey="count"
+                      stroke="none"
+                      strokeWidth={0}
                       onClick={d => toggleSeg(d.seg)}
                       onMouseEnter={d => setHoveredSeg(d.seg)}
                       onMouseLeave={() => setHoveredSeg(null)}
                       style={{ cursor: 'pointer' }}
                     >
-                      {donutData.map(d => (
-                        <Cell
-                          key={d.seg}
-                          fill={SEGMENT_COLORS[d.seg]}
-                          opacity={
-                            hoveredSeg && hoveredSeg !== d.seg ? 0.4 : 1
-                          }
-                          stroke={
-                            (filters.segmenti || []).includes(d.seg)
-                              ? '#1e293b'
-                              : 'transparent'
-                          }
-                          strokeWidth={2}
-                        />
-                      ))}
+                      {donutData.map(d => {
+                        const isActive = (filters.segmenti || []).includes(d.seg);
+                        return (
+                          <Cell
+                            key={d.seg}
+                            fill={SEGMENT_COLORS[d.seg]}
+                            stroke="none"
+                            strokeWidth={0}
+                            opacity={
+                              hoveredSeg && hoveredSeg !== d.seg ? 0.4 :
+                              !isActive && (filters.segmenti || []).length > 0 ? 0.45 :
+                              1
+                            }
+                          />
+                        );
+                      })}
                     </Pie>
                     <PieTooltip content={<DonutTooltip />} />
                   </PieChart>
@@ -242,9 +249,9 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
           <div>
             <p className="mb-4 text-sm font-semibold text-neutral-700">Performance per segmento</p>
             <ResponsiveContainer width="100%" height={208}>
-              <ComposedChart
+              <BarChart
                 data={barData}
-                margin={{ top: 4, right: 40, left: 0, bottom: 0 }}
+                margin={{ top: 20, right: 16, left: 0, bottom: 0 }}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} vertical={false} />
                 <XAxis
@@ -254,25 +261,13 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
                   tickLine={false}
                 />
                 <YAxis
-                  yAxisId="left"
-                  domain={[0, 5]}
-                  ticks={[1, 2, 3, 4, 5]}
                   tick={{ fontSize: 11, fill: AXIS_COLOR }}
                   axisLine={false}
                   tickLine={false}
-                  width={24}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 11, fill: AXIS_COLOR }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={32}
+                  width={28}
                 />
                 <Tooltip content={<BarTooltip />} cursor={{ fill: '#f8fafc' }} />
                 <Bar
-                  yAxisId="right"
                   dataKey="count"
                   radius={[4, 4, 0, 0]}
                   maxBarSize={48}
@@ -281,18 +276,13 @@ const Section2Segmenti = forwardRef(function Section2Segmenti(
                   {barData.map(d => (
                     <Cell key={d.seg} fill={SEGMENT_COLORS[d.seg] || VOLUME_COLOR} />
                   ))}
+                  <LabelList
+                    dataKey="ratingStr"
+                    position="top"
+                    style={{ fontSize: 11, fill: '#374151', fontWeight: 600 }}
+                  />
                 </Bar>
-                <Line
-                  yAxisId="left"
-                  dataKey="rating"
-                  stroke={RATING_COLOR}
-                  strokeWidth={2.5}
-                  dot={{ fill: RATING_COLOR, r: 4, strokeWidth: 0 }}
-                  activeDot={{ r: 6, strokeWidth: 0 }}
-                  name="Rating medio"
-                  connectNulls
-                />
-              </ComposedChart>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>

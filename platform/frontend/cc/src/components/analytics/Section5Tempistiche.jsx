@@ -239,12 +239,12 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
         <div>
           <p className="mb-4 text-sm font-semibold text-neutral-700">Stagionalita (mese × giorno settimana)</p>
           <div className="overflow-x-auto">
-            <table className="text-xs">
+            <table className="border-separate border-spacing-1 text-xs">
               <thead>
                 <tr>
-                  <th className="py-1.5 pr-3 text-left text-xs font-semibold text-neutral-400">Mese</th>
+                  <th className="py-1.5 pr-4 text-left text-xs font-semibold text-neutral-400">Mese</th>
                   {DOW_ORDER.map(d => (
-                    <th key={d} className="w-10 px-1 py-1.5 text-center text-xs font-semibold text-neutral-500">
+                    <th key={d} className="min-w-[60px] px-2 py-1.5 text-center text-xs font-semibold text-neutral-500">
                       {DOW_LABELS[d]}
                     </th>
                   ))}
@@ -253,18 +253,18 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
               <tbody>
                 {MONTH_LABELS.map((m, mi) => (
                   <tr key={m}>
-                    <td className="py-0.5 pr-3 text-left font-semibold text-neutral-600">{m}</td>
+                    <td className="py-1.5 pr-4 text-left font-semibold text-neutral-600">{m}</td>
                     {DOW_ORDER.map(d => {
                       const val = heatmap.matrix[mi][d];
                       const t   = heatmap.maxVal > 0 ? val / heatmap.maxVal : 0;
                       return (
                         <td
                           key={d}
-                          className="w-10 px-1 py-0.5 text-center font-semibold"
+                          className="min-h-[40px] min-w-[60px] px-3 py-2 text-center font-semibold"
                           style={{
                             backgroundColor: interpolateOrange(Math.min(t * 1.3, 1)),
                             color: t > 0.6 ? '#fff' : '#374151',
-                            borderRadius: 4,
+                            borderRadius: 6,
                           }}
                         >
                           {val > 0 ? val : ''}

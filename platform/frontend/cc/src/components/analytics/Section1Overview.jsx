@@ -1,6 +1,7 @@
 import { forwardRef, useMemo } from 'react';
 import {
-  ComposedChart, Bar, Line,
+  BarChart, Bar,
+  LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer,
 } from 'recharts';
@@ -47,7 +48,7 @@ function formatBucketLabel(key, granularity) {
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
-function TrendTooltip({ active, payload, label }) {
+function VolumeTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   return (
@@ -56,11 +57,6 @@ function TrendTooltip({ active, payload, label }) {
       <p className="text-xs text-neutral-500">
         Recensioni: <span className="font-semibold text-ink">{d.count}</span>
       </p>
-      {d.rating != null && (
-        <p className="text-xs text-neutral-500">
-          Rating: <span className="font-semibold text-ink">{d.rating.toFixed(1)}</span>
-        </p>
-      )}
       {d.trustpilot > 0 && <p className="mt-1 text-xs text-emerald-700">Trustpilot: {d.trustpilot}</p>}
       {d.apple      > 0 && <p className="text-xs text-neutral-600">iOS: {d.apple}</p>}
       {d.playstore  > 0 && <p className="text-xs text-blue-700">Android: {d.playstore}</p>}
@@ -69,10 +65,31 @@ function TrendTooltip({ active, payload, label }) {
   );
 }
 
+function RatingTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (d.rating == null) return null;
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-lg">
+      <p className="mb-1 text-sm font-semibold text-ink">{label}</p>
+      <p className="text-xs text-neutral-500">
+        Rating medio: <span className="font-semibold text-ink">{d.rating.toFixed(1)}</span>
+      </p>
+    </div>
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function avg(arr) {
   return arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+}
+
+function formatRate(num, den) {
+  if (!den || num === 0) return '0%';
+  const ratio = num / den;
+  if (ratio < 0.01) return '<1%';
+  return `${Math.round(ratio * 100)}%`;
 }
 
 function applyNonDateFilters(reviews, filters) {
@@ -125,9 +142,8 @@ const Section1Overview = forwardRef(function Section1Overview(
     const count12 = reviews.filter(r => [1, 2].includes(Number(r.stelle))).length;
     const satisfactionScore = total ? Math.round((count5 - count12) / total * 100) : 0;
 
-    const responseRate = total
-      ? Math.round(reviews.filter(r => r.risposta_pubblicata).length / total * 100)
-      : 0;
+    const responseCount = reviews.filter(r => r.risposta_pubblicata).length;
+    const responseRate  = formatRate(responseCount, total);
 
     const topicMap = new Map();
     reviews.forEach(r => (r.topic || []).forEach(t => topicMap.set(t, (topicMap.get(t) || 0) + 1)));
@@ -136,7 +152,8 @@ const Section1Overview = forwardRef(function Section1Overview(
     const loyalCount = reviews.filter(r => !r.prima_prenotazione).length;
     const loyaltyRate = total ? Math.round(loyalCount / total * 100) : 0;
 
-    const totalDelta   = prevTotal >= 5 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
+    const rawDelta     = prevTotal >= 30 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
+    const totalDelta   = rawDelta != null && Math.abs(rawDelta) > 500 ? null : rawDelta;
     const ratingDelta  = prevAvgRating > 0
       ? Math.round((avgRating - prevAvgRating) * 10) / 10
       : null;
@@ -173,6 +190,7 @@ const Section1Overview = forwardRef(function Section1Overview(
 
     return [...map.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
+      .filter(([, b]) => b.count > 0)
       .map(([key, b]) => ({
         label:      formatBucketLabel(key, granularity),
         count:      b.count,
@@ -221,11 +239,10 @@ const Section1Overview = forwardRef(function Section1Overview(
           <KpiCard
             label="Score Soddisfazione"
             value={`${kpis.satisfactionScore > 0 ? '+' : ''}${kpis.satisfactionScore}%`}
-            subtitle="% 5★ meno % 1-2★"
           />
           <KpiCard
             label="Tasso Risposta"
-            value={`${kpis.responseRate}%`}
+            value={kpis.responseRate}
             subtitle="con risposta pubblicata"
           />
           <KpiCard
@@ -237,77 +254,91 @@ const Section1Overview = forwardRef(function Section1Overview(
           <KpiCard
             label="Customer Loyalty"
             value={`${kpis.loyaltyRate}%`}
-            subtitle="con 1+ prenotazioni"
+            subtitle={`su ${kpis.total.toLocaleString('it-IT')} recensioni totali`}
           />
         </div>
 
-        {/* ── Trend chart ───────────────────────────────────────────── */}
-        <div>
-          <p className="mb-4 text-sm font-semibold text-neutral-700">
-            Andamento nel periodo
-          </p>
+        {/* ── Trend charts ──────────────────────────────────────────── */}
+        {trendData.length > 1 ? (
+          <div className="space-y-6">
 
-          {trendData.length > 1 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart
-                data={trendData}
-                margin={{ top: 4, right: 40, left: 0, bottom: 0 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="#f1f5f9"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  yAxisId="left"
-                  domain={[1, 5]}
-                  ticks={[1, 2, 3, 4, 5]}
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={24}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={32}
-                />
-                <Tooltip content={<TrendTooltip />} cursor={{ fill: '#f8fafc' }} />
-                <Bar
-                  yAxisId="right"
-                  dataKey="count"
-                  fill="#e2e8f0"
-                  radius={[4, 4, 0, 0]}
-                  name="Recensioni"
-                  maxBarSize={48}
-                />
-                <Line
-                  yAxisId="left"
-                  dataKey="rating"
-                  stroke="#FF8300"
-                  strokeWidth={2.5}
-                  dot={{ fill: '#FF8300', r: 3, strokeWidth: 0 }}
-                  activeDot={{ r: 5, strokeWidth: 0 }}
-                  name="Rating medio"
-                  connectNulls
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-sm text-neutral-400">
-              Dati insufficienti per visualizzare l andamento.
-            </p>
-          )}
-        </div>
+            {/* Chart 1 — Volume */}
+            <div>
+              <p className="mb-3 text-sm font-semibold text-neutral-700">Volume recensioni</p>
+              <ResponsiveContainer width="100%" height={224}>
+                <BarChart
+                  data={trendData}
+                  margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[0, 'auto']}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                  />
+                  <Tooltip content={<VolumeTooltip />} cursor={{ fill: '#f8fafc' }} />
+                  <Bar
+                    dataKey="count"
+                    fill="#0E978D"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={48}
+                    name="Recensioni"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Chart 2 — Rating */}
+            <div>
+              <p className="mb-3 text-sm font-semibold text-neutral-700">Rating medio</p>
+              <ResponsiveContainer width="100%" height={160}>
+                <LineChart
+                  data={trendData}
+                  margin={{ top: 4, right: 16, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    domain={[3, 5]}
+                    ticks={[3, 3.5, 4, 4.5, 5]}
+                    tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                  />
+                  <Tooltip content={<RatingTooltip />} cursor={{ stroke: '#e2e8f0' }} />
+                  <Line
+                    dataKey="rating"
+                    stroke="#FF8300"
+                    strokeWidth={2.5}
+                    dot={{ fill: '#FF8300', r: 4, strokeWidth: 0 }}
+                    activeDot={{ r: 6, strokeWidth: 0 }}
+                    name="Rating medio"
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-400">
+            Dati insufficienti per visualizzare l&apos;andamento.
+          </p>
+        )}
 
       </div>
     </SectionWrapper>

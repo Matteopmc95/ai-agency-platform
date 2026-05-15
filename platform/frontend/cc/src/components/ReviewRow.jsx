@@ -204,12 +204,12 @@ export default function ReviewRow({ review: initialReview, compact = false, onUp
           </div>
         )}
 
-        {/* Risposta AI + bottoni — nascosti per Apple (l'API non supporta reply) */}
+        {/* Stefy Agent + bottoni — nascosti per Apple (l'API non supporta reply) */}
         {!isApple && (
           <>
             <div className="rounded-[12px] border border-neutral-100 bg-neutral-50 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-400">
-                Risposta AI
+                Stefy Agent
               </p>
 
               {isEditing ? (

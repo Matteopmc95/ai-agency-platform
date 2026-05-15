@@ -30,8 +30,8 @@ export const SEGMENT_BADGE_CLS = {
 
 export const TOPIC_CATALOG = [
   'facilità','velocità','posizione','parcheggio','convenienza',
-  'generico','customer care','app','servizi','cancellazione',
-  'rimborso','sicurezza','pagamento in parcheggio',
+  'soddisfazione generale','generico','customer care','app','servizi',
+  'cancellazione','rimborso','sicurezza','pagamento in parcheggio',
 ];
 
 export const TOPIC_COLORS = {
@@ -40,6 +40,7 @@ export const TOPIC_COLORS = {
   'posizione':             '#0F766E',
   'parcheggio':            '#2563EB',
   'convenienza':           '#7C3AED',
+  'soddisfazione generale': '#10b981',
   'generico':              '#6B7280',
   'customer care':         '#DC2626',
   'app':                   '#DB2777',
@@ -56,6 +57,7 @@ export const TOPIC_LABELS = {
   'posizione':             'Posizione',
   'parcheggio':            'Parcheggio',
   'convenienza':           'Convenienza',
+  'soddisfazione generale': 'Soddisfazione gen.',
   'generico':              'Generico',
   'customer care':         'Customer Care',
   'app':                   'App',
