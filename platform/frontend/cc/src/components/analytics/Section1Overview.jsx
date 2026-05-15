@@ -80,13 +80,13 @@ function applyNonDateFilters(reviews, filters) {
     if (filters.segmenti.length  && !filters.segmenti.includes(r.segmento))          return false;
     if (filters.sources.length   && !filters.sources.includes(r.source))             return false;
     if (filters.stelle.length    && !filters.stelle.includes(Number(r.stelle)))      return false;
-    if (filters.topics.length    && !filters.topics.some(t => (r.topics || []).includes(t))) return false;
-    if (filters.status === 'matched' && r.enrichment_status !== 'matched')            return false;
-    if (filters.status === 'pending' && r.enrichment_status !== 'pending_sync')       return false;
-    if (filters.customer === 'new'        && (r.n_prenotazioni_precedenti || 0) !== 0) return false;
-    if (filters.customer === 'returning'  && (r.n_prenotazioni_precedenti || 0) < 1)  return false;
-    if (filters.customer === 'cross2'     && !r.cross_ever_completed_only)            return false;
-    if (filters.customer === 'cross3plus' && (r.segmenti_precedenti || []).length < 2) return false;
+    if (filters.topics.length    && !filters.topics.some(t => (r.topic || []).includes(t))) return false;
+    if (filters.status === 'matched' && r.enrichment_status !== 'matched')     return false;
+    if (filters.status === 'pending' && r.enrichment_status !== 'pending_sync') return false;
+    if (filters.customer === 'new'        && !r.prima_prenotazione)  return false;
+    if (filters.customer === 'returning'  && r.prima_prenotazione)   return false;
+    if (filters.customer === 'cross2'     && !r.cross)               return false;
+    if (filters.customer === 'cross3plus' && !r.cross)               return false;
     return true;
   });
 }
@@ -130,13 +130,13 @@ const Section1Overview = forwardRef(function Section1Overview(
       : 0;
 
     const topicMap = new Map();
-    reviews.forEach(r => (r.topics || []).forEach(t => topicMap.set(t, (topicMap.get(t) || 0) + 1)));
+    reviews.forEach(r => (r.topic || []).forEach(t => topicMap.set(t, (topicMap.get(t) || 0) + 1)));
     const topEntry = [...topicMap.entries()].sort((a, b) => b[1] - a[1])[0];
 
-    const loyalCount = reviews.filter(r => (r.n_prenotazioni_precedenti || 0) >= 1).length;
+    const loyalCount = reviews.filter(r => !r.prima_prenotazione).length;
     const loyaltyRate = total ? Math.round(loyalCount / total * 100) : 0;
 
-    const totalDelta   = prevTotal > 0 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
+    const totalDelta   = prevTotal >= 5 ? Math.round((total - prevTotal) / prevTotal * 100) : null;
     const ratingDelta  = prevAvgRating > 0
       ? Math.round((avgRating - prevAvgRating) * 10) / 10
       : null;

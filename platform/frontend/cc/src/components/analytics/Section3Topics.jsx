@@ -50,7 +50,7 @@ const Section3Topics = forwardRef(function Section3Topics({ reviews }, ref) {
     TOPIC_CATALOG.forEach(t => map.set(t, { count: 0, starSum: 0, starCount: 0 }));
 
     reviews.forEach(r => {
-      (r.topics || []).forEach(t => {
+      (r.topic || []).forEach(t => {
         if (!map.has(t)) return;
         const b = map.get(t);
         b.count++;
@@ -82,7 +82,7 @@ const Section3Topics = forwardRef(function Section3Topics({ reviews }, ref) {
     reviews.forEach(r => {
       const seg = r.segmento;
       if (!SEGMENT_ORDER.includes(seg)) return;
-      (r.topics || []).forEach(t => {
+      (r.topic || []).forEach(t => {
         if (matrix[t]) matrix[t][seg]++;
       });
     });
@@ -111,7 +111,7 @@ const Section3Topics = forwardRef(function Section3Topics({ reviews }, ref) {
     const responseMap = new Map();
     TOPIC_CATALOG.forEach(t => responseMap.set(t, { withResp: 0, total: 0 }));
     reviews.forEach(r => {
-      (r.topics || []).forEach(t => {
+      (r.topic || []).forEach(t => {
         if (!responseMap.has(t)) return;
         const b = responseMap.get(t);
         b.total++;

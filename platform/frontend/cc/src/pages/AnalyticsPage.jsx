@@ -119,13 +119,13 @@ export default function AnalyticsPage() {
       if (segmenti.length && !segmenti.includes(r.segmento)) return false;
       if (sources.length  && !sources.includes(r.source))   return false;
       if (stelle.length   && !stelle.includes(Number(r.stelle))) return false;
-      if (topics.length   && !topics.some(t => (r.topics || []).includes(t))) return false;
+      if (topics.length   && !topics.some(t => (r.topic || []).includes(t)))  return false;
       if (status === 'matched' && r.enrichment_status !== 'matched') return false;
       if (status === 'pending' && r.enrichment_status !== 'pending_sync') return false;
-      if (customer === 'new'        && (r.n_prenotazioni_precedenti || 0) !== 0) return false;
-      if (customer === 'returning'  && (r.n_prenotazioni_precedenti || 0) < 1)   return false;
-      if (customer === 'cross2'     && !r.cross_ever_completed_only)             return false;
-      if (customer === 'cross3plus' && (r.segmenti_precedenti || []).length < 2) return false;
+      if (customer === 'new'        && !r.prima_prenotazione) return false;
+      if (customer === 'returning'  && r.prima_prenotazione)  return false;
+      if (customer === 'cross2'     && !r.cross)              return false;
+      if (customer === 'cross3plus' && !r.cross)              return false;
       return true;
     });
   }, [allReviews, filters]);

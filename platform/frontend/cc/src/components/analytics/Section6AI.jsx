@@ -117,7 +117,7 @@ const Section6AI = forwardRef(function Section6AI({ reviews }, ref) {
     const map = new Map();
     TOPIC_CATALOG.forEach(t => map.set(t, 0));
     withResp.forEach(r => {
-      (r.topics || []).forEach(t => {
+      (r.topic || []).forEach(t => {
         if (map.has(t)) map.set(t, map.get(t) + 1);
       });
     });
