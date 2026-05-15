@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from 'react';
+import { forwardRef, useEffect, useMemo, useState } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line,
@@ -49,6 +49,32 @@ function SimpleTooltip({ active, payload, label, unit = '' }) {
 
 const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews }, ref) {
 
+  // Anno selezionato per la heatmap (indipendente dal filtro globale)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const availableYears = useMemo(() => {
+    const years = new Set();
+    reviews.forEach(r => {
+      if (!r.data) return;
+      const y = new Date(r.data).getFullYear();
+      if (!isNaN(y)) years.add(y);
+    });
+    return Array.from(years).sort((a, b) => b - a); // desc: 2026, 2025, ...
+  }, [reviews]);
+
+  // Se l'anno selezionato non è più disponibile (cambio filtro globale) → reset al più recente
+  useEffect(() => {
+    if (availableYears.length > 0 && !availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears[0]);
+    }
+  }, [availableYears, selectedYear]);
+
+  // Reviews filtrate per anno: usate solo dalla heatmap
+  const heatmapReviews = useMemo(
+    () => reviews.filter(r => r.data && new Date(r.data).getFullYear() === selectedYear),
+    [reviews, selectedYear]
+  );
+
   // Day of week distribution
   const dowData = useMemo(() => {
     const counts = Array(7).fill(0);
@@ -96,21 +122,21 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
     }));
   }, [reviews]);
 
-  // Seasonality heatmap: month (1-12) × day of week (0-6)
+  // Seasonality heatmap: month (1-12) × day of week (0-6) — solo anno selezionato
   const heatmap = useMemo(() => {
     const matrix = Array.from({ length: 12 }, () => Array(7).fill(0));
-    reviews.forEach(r => {
+    heatmapReviews.forEach(r => {
       if (!r.data) return;
       const d = new Date(r.data.slice(0, 10) + 'T12:00:00Z');
-      const m   = d.getUTCMonth();     // 0-11
-      const dow = d.getUTCDay();       // 0-6
+      const m   = d.getUTCMonth();
+      const dow = d.getUTCDay();
       matrix[m][dow]++;
     });
 
     let maxVal = 1;
     matrix.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
     return { matrix, maxVal };
-  }, [reviews]);
+  }, [heatmapReviews]);
 
   const hasHourData  = hourData.some(d => d.count > 0);
   const hasTimingData = timingData.some(d => d.count > 0);
@@ -237,7 +263,20 @@ const Section5Tempistiche = forwardRef(function Section5Tempistiche({ reviews },
 
         {/* ── Seasonality heatmap: Month × DoW ────────────────────── */}
         <div>
-          <p className="mb-4 text-sm font-semibold text-neutral-700">Stagionalita (mese × giorno settimana)</p>
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-sm font-semibold text-neutral-700">Stagionalita (mese × giorno settimana)</p>
+            {availableYears.length > 1 && (
+              <select
+                value={selectedYear}
+                onChange={e => setSelectedYear(Number(e.target.value))}
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-1 text-sm text-neutral-700 focus:outline-none focus:ring-1 focus:ring-neutral-300"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <table className="border-separate border-spacing-1 text-xs">
               <thead>
